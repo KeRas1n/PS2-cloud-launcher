@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
-import type { CloudStatus, MegaCredentials, Progress, SyncKind } from '../../shared/types';
+import type { CloudStatus, MegaCredentials, Progress, Settings, SyncKind } from '../../shared/types';
 import { SettingsStore } from './settings';
 import { run } from './process';
 import { download, extract, trustedFetch } from './download';
@@ -21,6 +21,7 @@ export class RcloneService {
   private control: RcloneRemoteControl;
   private log: TransferLog;
   private megaCode?: string;
+  private transferSignal?: AbortSignal;
   constructor(
     private store: SettingsStore,
     private emit: (p: Progress) => void,
@@ -37,6 +38,32 @@ export class RcloneService {
   dispose() {
     this.control.dispose();
     this.megaCode = undefined;
+  }
+  async close() {
+    this.dispose();
+    await this.control.closed();
+  }
+  setCancellation(signal: AbortSignal) {
+    this.transferSignal = signal;
+  }
+  async createTransferClient(settings: Settings, directory: string) {
+    await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+    const config = path.join(directory, 'rclone.conf');
+    try {
+      await fs.writeFile(config, await fs.readFile(settings.rcloneConfig), { mode: 0o600, flag: 'wx' });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    const store = new SettingsStore(this.store.userData, this.store.userData);
+    store.value = { ...structuredClone(settings), rcloneConfig: config };
+    const client = new RcloneService(store, () => {}, this.bundledPath);
+    client.log = this.log;
+    client.megaCode = this.megaCode;
+    return { client, store };
+  }
+  // Small commit/rollback steps must finish even when cancellation arrives at that instant.
+  commit(args: string[]) {
+    return this.invoke(args, false, false, false);
   }
   private async binary() {
     return this.bundledPath && (await exists(this.bundledPath))
@@ -100,17 +127,28 @@ export class RcloneService {
       await this.log.flush().catch(() => {});
     }
   }
-  private async invoke(args: string[], progress: boolean | ((progress: Progress) => void), oauth: boolean) {
+  private async invoke(
+    args: string[],
+    progress: boolean | ((progress: Progress) => void),
+    oauth: boolean,
+    cancellable = true,
+  ) {
     const s = this.store.value;
+    const signal = cancellable ? this.transferSignal : undefined;
+    signal?.throwIfAborted();
     const started = performance.now();
     let previous = { bytes: 0, time: started };
-    if (s.cloudProvider === 'mega' && ['lsjson', 'lsd', 'mkdir', 'copy', 'copyto'].includes(args[0]))
+    if (
+      s.cloudProvider === 'mega' &&
+      ['lsjson', 'lsd', 'mkdir', 'copy', 'copyto', 'moveto', 'deletefile'].includes(args[0])
+    )
       return this.control.command(
         await this.binary(),
         s.rcloneConfig,
         this.megaCode,
         args,
         progress ? (typeof progress === 'function' ? progress : this.emit) : undefined,
+        signal,
       );
     return run(
       await this.binary(),
@@ -125,6 +163,7 @@ export class RcloneService {
       {
         timeout: oauth ? 300_000 : progress ? 24 * 60 * 60 * 1000 : 120_000,
         privateOutput: oauth,
+        signal,
         onLine: progress
           ? (line) => {
               const diagnostic = transferDiagnostic(line);

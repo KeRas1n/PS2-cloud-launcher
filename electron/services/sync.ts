@@ -14,7 +14,7 @@ interface Entry {
   modified: string;
   absolute?: string;
 }
-interface Prepared {
+export interface Prepared {
   plan: SyncPlan;
   request: SyncRequest;
   fingerprint: string;
@@ -68,6 +68,8 @@ export class SyncService {
     private games: GameService,
     private pcsx2: PCSX2Service,
     private emit: (p: Progress) => void,
+    private background = false,
+    private signal?: AbortSignal,
   ) {}
   private localRoot(request: SyncRequest) {
     const s = this.store.value;
@@ -110,10 +112,13 @@ export class SyncService {
       : { source: remote, destination: local };
   }
   async plan(request: SyncRequest): Promise<SyncPlan> {
-    if (this.busy || this.pcsx2.running)
+    const settings = JSON.stringify(this.store.value);
+    if (this.busy || (request.kind !== 'Games' && this.pcsx2.running))
       throw new Error('Close PCSX2 and wait for active transfers before synchronizing.');
     await this.rclone.ensureFolders();
     const { source, destination } = await this.entries(request);
+    if (settings !== JSON.stringify(this.store.value))
+      throw new Error('Settings changed. Review a new transfer preview.');
     if (!source.length) throw new Error('No source files found. Nothing to transfer.');
     const id = randomUUID(),
       files = makeFiles(source, destination);
@@ -135,7 +140,7 @@ export class SyncService {
       plan,
       request,
       fingerprint: fingerprint(source, destination),
-      settings: JSON.stringify(this.store.value),
+      settings,
       expires: Date.now() + 10 * 60_000,
     });
     return plan;
@@ -143,17 +148,37 @@ export class SyncService {
   cancel(id: string) {
     this.plans.delete(id);
   }
+  detach(id: string, confirmed: boolean) {
+    const prepared = this.plans.get(id);
+    if (!prepared || prepared.expires < Date.now())
+      throw new Error('Transfer preview expired. Review a new preview.');
+    if (prepared.settings !== JSON.stringify(this.store.value))
+      throw new Error('Settings changed. Review a new transfer preview.');
+    if (prepared.plan.files.some((f) => f.replaces) && !confirmed)
+      throw new Error('Confirm file replacements before proceeding.');
+    this.plans.delete(id);
+    return structuredClone(prepared);
+  }
+  adopt(prepared: Prepared) {
+    this.plans.set(prepared.plan.id, {
+      ...prepared,
+      settings: JSON.stringify(this.store.value),
+      expires: Infinity,
+    });
+  }
   async execute(id: string, confirmed: boolean) {
     const prepared = this.plans.get(id);
     if (!prepared || prepared.expires < Date.now())
       throw new Error('Transfer preview expired. Review a new preview.');
-    if (this.busy || this.pcsx2.running) throw new Error('Close PCSX2 and wait for active transfers first.');
+    if (this.busy || (prepared.request.kind !== 'Games' && this.pcsx2.running))
+      throw new Error('Close PCSX2 and wait for active transfers first.');
     if (prepared.plan.files.some((f) => f.replaces) && !confirmed)
       throw new Error('Confirm file replacements before proceeding.');
     if (prepared.settings !== JSON.stringify(this.store.value))
       throw new Error('Settings changed. Review a new transfer preview.');
     this.busy = true;
     try {
+      this.signal?.throwIfAborted();
       const { source, destination } = await this.entries(prepared.request);
       if (prepared.fingerprint !== fingerprint(source, destination))
         throw new Error('Files changed since preview. Review a new transfer preview before overwriting.');
@@ -162,6 +187,7 @@ export class SyncService {
       const root = this.localRoot(request);
       let completed = 0;
       for (let index = 0; index < source.length; index++) {
+        this.signal?.throwIfAborted();
         const file = source[index];
         safeRelative(file.path);
         const remote = `${this.rclone.remote(request.kind)}/${file.path}`;
@@ -187,7 +213,11 @@ export class SyncService {
           percent: plan.bytes ? (completed / plan.bytes) * 100 : undefined,
         });
         // copyto never propagates deletions. Rclone moves replaced destinations into backup-dir before writing.
-        await this.rclone.call(
+        const copy = this.background
+          ? (args: string[], progress: (p: Progress) => void) =>
+              this.stagedCopy(args, progress, file, destination, request, plan, index)
+          : (args: string[], progress: (p: Progress) => void) => this.rclone.call(args, progress);
+        await copy(
           [
             'copyto',
             from,
@@ -222,6 +252,83 @@ export class SyncService {
       });
     } finally {
       this.busy = false;
+    }
+  }
+  private async stagedCopy(
+    args: string[],
+    progress: (p: Progress) => void,
+    file: Entry,
+    destination: Entry[],
+    request: SyncRequest,
+    plan: SyncPlan,
+    index: number,
+  ) {
+    const from = args[1],
+      to = args[2],
+      backup = args[args.indexOf('--backup-dir') + 1];
+    const download = request.direction === 'download';
+    const stage = download
+      ? path.join(path.dirname(to), `.${path.basename(to)}.${plan.id}.partial`)
+      : `${this.rclone.remote(request.kind)}/.launcher-${plan.id}-${index}.partial`;
+    const previous = destination.find((f) => f.path === file.path);
+    let movedOriginal = false;
+    try {
+      await this.rclone.call(
+        ['copyto', from, stage, '--ignore-times', '--inplace', '--retries', '3', '--low-level-retries', '5'],
+        progress,
+      );
+      this.signal?.throwIfAborted();
+      if (download) {
+        await rejectSymlinks(to);
+        if (request.kind !== 'Games' && this.pcsx2.running)
+          throw new Error('Close PCSX2 before replacing saves.');
+        if (
+          request.kind === 'Games' &&
+          this.pcsx2.running &&
+          this.pcsx2.gamePath &&
+          path.resolve(this.pcsx2.gamePath).toLowerCase() === path.resolve(to).toLowerCase()
+        )
+          throw new Error('Close this game before replacing its disc image.');
+        const current = (await exists(to)) ? await fs.stat(to) : undefined;
+        if (
+          !!previous !== !!current ||
+          (previous &&
+            current &&
+            (previous.size !== current.size || previous.modified !== current.mtime.toISOString()))
+        )
+          throw new Error('Destination changed during transfer. Original file kept.');
+        if (current) {
+          await fs.mkdir(backup, { recursive: true });
+          await fs.copyFile(to, path.join(backup, path.basename(to)), 1);
+        }
+        this.signal?.throwIfAborted();
+        await fs.rename(stage, to);
+      } else {
+        const current = (await this.rclone.list(this.rclone.remote(request.kind))).find(
+          (f) => f.Path === file.path,
+        );
+        if (
+          !!previous !== !!current ||
+          (previous && current && (previous.size !== current.Size || previous.modified !== current.ModTime))
+        )
+          throw new Error('Cloud destination changed during transfer. Original file kept.');
+        this.signal?.throwIfAborted();
+        if (previous) {
+          await this.rclone.commit(['moveto', to, `${backup}/${path.posix.basename(file.path)}`]);
+          movedOriginal = true;
+        }
+        try {
+          await this.rclone.commit(['moveto', stage, to]);
+        } catch (error) {
+          if (movedOriginal)
+            await this.rclone.commit(['moveto', `${backup}/${path.posix.basename(file.path)}`, to]);
+          throw error;
+        }
+      }
+    } finally {
+      // Staging is unique to this plan; cancellation never removes an existing destination.
+      if (download) await fs.rm(stage, { force: true, maxRetries: 10, retryDelay: 100 }).catch(() => {});
+      else await this.rclone.commit(['deletefile', stage]).catch(() => {});
     }
   }
 }

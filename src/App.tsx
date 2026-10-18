@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -17,6 +17,7 @@ import {
   Layers3,
   LoaderCircle,
   MonitorDown,
+  MoreHorizontal,
   Play,
   Plus,
   RefreshCw,
@@ -30,17 +31,21 @@ import {
 import type {
   CloudProvider,
   Game,
+  GameDeletion,
   Library,
   Progress,
   Settings,
   Snapshot,
   SyncPlan,
   SyncRequest,
+  Transfer,
 } from '../shared/types';
+import { gameExtension, supportedGameFormats } from '../shared/game-formats';
 
 type SettingsTab = 'Games' | 'Emulator' | 'Cloud';
 const settingsTabs: SettingsTab[] = ['Games', 'Emulator', 'Cloud'];
-type Page = 'Games' | 'Emulator' | 'Cloud' | 'Settings';
+type Page = 'Games' | 'Emulator' | 'Cloud' | 'Settings' | 'Downloads';
+const activeTransfer = (item: Transfer) => ['queued', 'running', 'cancelling'].includes(item.state);
 const api = window.launcher;
 const navigation = [
   { name: 'Games', icon: Gamepad2 },
@@ -113,6 +118,77 @@ export default function App() {
   const [megaPassword, setMegaPassword] = useState('');
   const [megaCode, setMegaCode] = useState('');
   const [changeMegaAccount, setChangeMegaAccount] = useState(false);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [preparingTransfer, setPreparingTransfer] = useState(false);
+  const terminalTransfers = useRef(new Set<string>());
+  const [deletion, setDeletion] = useState<GameDeletion>();
+  const [deleting, setDeleting] = useState(false);
+  const [deletionLoading, setDeletionLoading] = useState(false);
+  const [deletionError, setDeletionError] = useState('');
+  async function beginDelete(game: Game) {
+    if (!api || deletionLoading) return;
+    setDeletionLoading(true);
+    setDeletionError('');
+    try {
+      setDeletion(await api.prepareDeleteGame(game.id));
+    } catch (error) {
+      setError((error as Error).message);
+    } finally {
+      setDeletionLoading(false);
+    }
+  }
+  async function confirmDelete() {
+    if (!api || !deletion || deleting) return;
+    setDeleting(true);
+    setDeletionError('');
+    try {
+      await api.deleteGame(deletion.token, true);
+      setDeletion(undefined);
+      setNotice('Игра удалена с устройства');
+      setLibrary(await api.library());
+    } catch (error) {
+      setDeletionError((error as Error).message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+  useEffect(() => {
+    if (!api) return;
+    const receive = (items: Transfer[]) => {
+      setTransfers(items);
+      const finished = items.filter(
+        (item) => !activeTransfer(item) && !terminalTransfers.current.has(item.id),
+      );
+      for (const item of finished) terminalTransfers.current.add(item.id);
+      if (finished.length)
+        void api
+          .library()
+          .then(setLibrary)
+          .catch(() => {});
+    };
+    const unsubscribe = api.onTransfers(receive);
+    void api
+      .transfers()
+      .then(receive)
+      .catch((e) => setError(e.message));
+    return unsubscribe;
+  }, []);
+  async function cancelTransfer(id: string) {
+    try {
+      await api!.cancelTransfer(id);
+    } catch (error) {
+      setError((error as Error).message);
+    }
+  }
+  async function enqueuePlan(current: SyncPlan) {
+    setPlan(undefined);
+    try {
+      await api!.enqueueSync(current.id, true);
+      setNotice('Added to downloads');
+    } catch (error) {
+      setError((error as Error).message);
+    }
+  }
   async function selectProvider(provider: CloudProvider) {
     setMegaEmail('');
     setMegaPassword('');
@@ -173,20 +249,25 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [notice]);
   useEffect(() => {
-    if (!plan) return;
+    if (!plan && !deletion) return;
     const previous = document.activeElement as HTMLElement | null;
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
     const buttons = () => [...(dialog?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
-    buttons()[0]?.focus();
+    (buttons()[0] ?? dialog)?.focus();
     const handler = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) {
+      if (event.key === 'Escape' && !busy && !deleting) {
         event.preventDefault();
-        void cancelPreview();
+        if (deletion) setDeletion(undefined);
+        else void cancelPreview();
       }
       if (event.key === 'Tab') {
         const items = buttons(),
           first = items[0],
           last = items.at(-1);
+        if (!items.length) {
+          event.preventDefault();
+          return;
+        }
         if (event.shiftKey && document.activeElement === first) {
           event.preventDefault();
           last?.focus();
@@ -201,7 +282,7 @@ export default function App() {
       document.removeEventListener('keydown', handler);
       previous?.focus();
     };
-  }, [plan, busy]);
+  }, [plan, deletion, busy, deleting]);
   async function act(label: string, action: () => Promise<unknown>, success?: string, scan = true) {
     if (busy) return;
     setBusy(label);
@@ -219,8 +300,8 @@ export default function App() {
     }
   }
   async function preview(request: SyncRequest) {
-    if (!api || busy) return;
-    setBusy('Preparing transfer');
+    if (!api || preparingTransfer) return;
+    setPreparingTransfer(true);
     setError('');
     setProgress(undefined);
     try {
@@ -228,7 +309,7 @@ export default function App() {
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setBusy('');
+      setPreparingTransfer(false);
     }
   }
   async function cancelPreview() {
@@ -248,6 +329,7 @@ export default function App() {
   const provider = snapshot?.settings.cloudProvider ?? 'dropbox';
   const providerName = provider === 'mega' ? 'MEGA' : 'Dropbox';
   const emulator = snapshot?.emulator;
+  const activeTransfers = transfers.filter(activeTransfer);
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setDraft((d) => (d ? { ...d, [key]: value } : d));
   async function pickSetting(key: keyof Settings, kind: 'directory' | 'executable' = 'directory') {
@@ -320,6 +402,23 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <button
+          className={`nav-item downloads-nav ${page === 'Downloads' ? 'active' : ''}`}
+          aria-label="Download manager"
+          title="Download manager"
+          onClick={() => setPage('Downloads')}
+        >
+          <ArrowDownToLine size={20} />
+          <div className="download-manager-label">
+            <span>Downloads</span>
+            <small>
+              {activeTransfers.length
+                ? `${activeTransfers.length} active · ${transferRate(activeTransfers.reduce((sum, item) => sum + item.speed, 0))}`
+                : 'Downloads & uploads'}
+            </small>
+          </div>
+          {!!activeTransfers.length && <b>{activeTransfers.length}</b>}
+        </button>
       </aside>
       <div className="workspace">
         <header className="topbar">
@@ -355,6 +454,92 @@ export default function App() {
             <div className="loading">
               <LoaderCircle className="spin" size={20} /> Checking emulator and cloud connection…
             </div>
+          )}
+          {page === 'Downloads' && (
+            <>
+              <PageHeading title="Downloads" />
+              <p className="downloads-description">
+                Two transfers run at a time. Games stay playable while files transfer. Closing the launcher
+                cancels pending transfers.
+              </p>
+              {!transfers.length && (
+                <section className="panel empty-transfers">
+                  <ArrowDownToLine size={30} />
+                  <h3>No transfers yet</h3>
+                  <p>Game downloads and uploads appear here.</p>
+                </section>
+              )}
+              <div className="transfer-list">
+                {[
+                  ...transfers.filter(activeTransfer),
+                  ...transfers.filter((item) => !activeTransfer(item)).reverse(),
+                ].map((item) => (
+                  <article
+                    className={`panel transfer-row state-${item.state}`}
+                    key={item.id}
+                    aria-label={`${item.direction} ${item.title}`}
+                  >
+                    <div className="transfer-direction">
+                      {item.direction === 'download' ? (
+                        <ArrowDownToLine size={22} />
+                      ) : (
+                        <ArrowUpFromLine size={22} />
+                      )}
+                    </div>
+                    <div className="transfer-info">
+                      <div className="transfer-title">
+                        <h3>{item.title}</h3>
+                        <span>
+                          {item.provider === 'mega' ? 'MEGA' : 'Dropbox'} ·{' '}
+                          {item.direction === 'download' ? 'Download' : 'Upload'}
+                        </span>
+                      </div>
+                      <div className="progress-track">
+                        <div
+                          style={{
+                            width: `${item.totalBytes ? Math.min(100, (item.bytes / item.totalBytes) * 100) : item.state === 'completed' ? 100 : 0}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="transfer-metrics">
+                        <span>
+                          {item.state === 'running'
+                            ? transferRate(item.speed)
+                            : item.state === 'queued'
+                              ? 'Queued'
+                              : item.state === 'cancelling'
+                                ? 'Cancelling…'
+                                : item.state === 'completed'
+                                  ? 'Complete'
+                                  : item.state === 'cancelled'
+                                    ? 'Cancelled'
+                                    : 'Failed'}
+                        </span>
+                        <span>
+                          {size(item.bytes)} / {size(item.totalBytes)}
+                        </span>
+                      </div>
+                      <p className="transfer-message">{item.error ?? item.message}</p>
+                    </div>
+                    {activeTransfer(item) && (
+                      <button
+                        className="icon-button cancel-transfer"
+                        aria-label={`Cancel ${item.direction} ${item.title}`}
+                        title="Cancel transfer"
+                        disabled={item.state === 'cancelling'}
+                        onClick={() => void cancelTransfer(item.id)}
+                      >
+                        {item.state === 'cancelling' ? (
+                          <LoaderCircle className="spin" size={19} />
+                        ) : (
+                          <X size={20} />
+                        )}
+                      </button>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </>
           )}
           {page === 'Games' && (
             <>
@@ -449,6 +634,12 @@ export default function App() {
                       cloudChecked={library.cloudChecked}
                       disabled={disabled}
                       connected={connected}
+                      emulatorRunning={!!emulator?.running}
+                      transfer={activeTransfers.find((item) => item.gameId === game.id)}
+                      preparing={preparingTransfer}
+                      deletionLoading={deletionLoading}
+                      onDelete={() => void beginDelete(game)}
+                      onCancel={(id) => void cancelTransfer(id)}
                       onPlay={() =>
                         void act('Starting PCSX2', () => api!.openEmulator(game.id), 'PCSX2 launched', false)
                       }
@@ -463,7 +654,7 @@ export default function App() {
                   <p>
                     {query || filter !== 'All games'
                       ? 'Try another search or library filter.'
-                      : `Add a folder with your .iso or .chd files, or connect ${providerName} to discover your cloud library.`}
+                      : `Add a folder with PCSX2 images (${supportedGameFormats}), or connect ${providerName} to discover your cloud library. For CUE/BIN, include the BIN image.`}
                   </p>
                   {!query && filter === 'All games' && (
                     <div className="empty-actions">
@@ -609,8 +800,8 @@ export default function App() {
                   disabled={disabled || emulator?.running}
                   onChange={(e) => void selectProvider(e.target.value as CloudProvider)}
                 >
+                  <option value="mega">MEGA (Recomended)</option>
                   <option value="dropbox">Dropbox</option>
-                  <option value="mega">MEGA</option>
                 </select>
                 <small>
                   Saved connections are kept. Switching selects storage; files transfer when syncing.
@@ -901,7 +1092,8 @@ export default function App() {
                     <div>
                       <h3>Game library</h3>
                       <p>
-                        Scan folders recursively for .iso and .chd files. Filename identifies each cloud game.
+                        Scan folders recursively for {supportedGameFormats}. For CUE/BIN, include the BIN
+                        image. Filename identifies each cloud game.
                       </p>
                     </div>
                   </div>
@@ -1094,7 +1286,6 @@ export default function App() {
                 ? `${size(progress.bytes)}${progress.totalBytes ? ` / ${size(progress.totalBytes)}` : ''}`
                 : ''}
               {progress?.speed !== undefined ? ` · ${transferRate(progress.speed)}` : ''}
-              {progress?.averageSpeed !== undefined ? ` · avg ${transferRate(progress.averageSpeed)}` : ''}
             </small>
             {!busy && (
               <button
@@ -1115,6 +1306,59 @@ export default function App() {
           <button aria-label="Dismiss notification" onClick={() => setNotice('')}>
             <X size={16} />
           </button>
+        </div>
+      )}
+      {deletion && (
+        <div className="modal-backdrop">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-game-title"
+            aria-describedby="delete-game-warning"
+            tabIndex={-1}
+            className="modal delete-game-modal"
+          >
+            <div className="modal-top">
+              <div className="panel-symbol delete-symbol">
+                <Trash2 />
+              </div>
+              <button
+                className="icon-button"
+                aria-label="Закрыть подтверждение удаления"
+                disabled={deleting}
+                onClick={() => setDeletion(undefined)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <h2 id="delete-game-title">Вы уверены, что хотите удалить игру?</h2>
+            <p className="delete-game-name">{deletion.title}</p>
+            <p className="delete-game-path">{deletion.localPath}</p>
+            <p
+              id="delete-game-warning"
+              className={deletion.cloud === 'stored' ? 'safe-note' : 'conflict-warning'}
+            >
+              {deletion.cloud === 'stored'
+                ? 'Игра находится в вашем облаке, так что вы в любой момент сможете её оттуда скачать.'
+                : deletion.cloud === 'missing'
+                  ? 'Эта игра не сохранена в вашем облаке! Вы её потеряете навсегда!'
+                  : 'Не удалось проверить копию игры в облаке. Если её там нет, после удаления вы потеряете игру навсегда!'}
+            </p>
+            {deletionError && (
+              <p role="alert" className="delete-game-error">
+                {deletionError}
+              </p>
+            )}
+            <div className="modal-actions">
+              <Button secondary disabled={deleting} onClick={() => setDeletion(undefined)}>
+                Отменить
+              </Button>
+              <Button className="danger" disabled={deleting} onClick={() => void confirmDelete()}>
+                {deleting ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={16} />}{' '}
+                {deleting ? 'Удаление…' : 'Удалить'}
+              </Button>
+            </div>
+          </section>
         </div>
       )}
       {plan && (
@@ -1174,8 +1418,10 @@ export default function App() {
               </div>
             </div>
             <p className="modal-help">
-              No files will be deleted because they are missing from the source. Keep PCSX2 closed until the
-              transfer finishes.
+              No files are deleted because they are missing from the source.{' '}
+              {plan.kind === 'Games'
+                ? 'This transfer runs in the background. Installed games stay playable.'
+                : 'Keep PCSX2 closed while save files are being synchronized.'}
             </p>
             <div className="modal-actions">
               <Button secondary disabled={!!busy} onClick={() => void cancelPreview()}>
@@ -1184,13 +1430,7 @@ export default function App() {
               <Button
                 disabled={!!busy}
                 onClick={() => {
-                  const current = plan;
-                  setPlan(undefined);
-                  void act(
-                    'Synchronizing files',
-                    () => api!.executeSync(current.id, true),
-                    'Transfer complete. Library refreshed.',
-                  );
+                  void enqueuePlan(plan);
                 }}
               >
                 {busy ? (
@@ -1226,6 +1466,12 @@ function GameCard({
   onPlay,
   onTransfer,
   onCover,
+  transfer,
+  onCancel,
+  emulatorRunning,
+  preparing,
+  onDelete,
+  deletionLoading,
 }: {
   game: Game;
   index: number;
@@ -1235,8 +1481,37 @@ function GameCard({
   onPlay: () => void;
   onTransfer: (direction: 'upload' | 'download') => void;
   onCover: () => void;
+  transfer?: Transfer;
+  onCancel: (id: string) => void;
+  emulatorRunning: boolean;
+  preparing: boolean;
+  onDelete: () => void;
+  deletionLoading: boolean;
 }) {
   const download = game.state === 'Cloud Only';
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    const outside = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMenuOpen(false);
+        menuButton.current?.focus();
+      } else if (event.key === 'Tab') setMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [menuOpen]);
   return (
     <article className="game-card" style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}>
       <div className={`game-cover cover-color-${index % 6}`}>
@@ -1261,17 +1536,67 @@ function GameCard({
           </button>
           <button
             className="cover-play"
-            disabled={disabled}
+            disabled={disabled || (download ? !!transfer || preparing || !connected : emulatorRunning)}
             aria-label={download ? `Download ${game.title}` : `Play ${game.title}`}
             onClick={download ? () => onTransfer('download') : onPlay}
           >
             {download ? <ArrowDownToLine size={25} /> : <Play size={27} fill="currentColor" />}
           </button>
         </div>
-        <span className="cover-format">{game.name.split('.').pop()?.toUpperCase()}</span>
+        <span className="cover-format">{gameExtension(game.name)?.toUpperCase()}</span>
       </div>
       <div className="game-info">
-        <h3 title={game.title}>{game.title}</h3>
+        <div className="game-title-row">
+          <h3 title={game.title}>{game.title}</h3>
+          <div className="game-menu" ref={menuRef}>
+            <button
+              ref={menuButton}
+              className="icon-button game-menu-toggle"
+              aria-label={`Меню игры ${game.title}`}
+              title="Дополнительные действия"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-controls={`game-menu-${game.id}`}
+              disabled={disabled}
+              onClick={() => setMenuOpen((open) => !open)}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault();
+                  setMenuOpen(true);
+                }
+              }}
+            >
+              <MoreHorizontal size={18} />
+            </button>
+            {menuOpen && (
+              <div
+                id={`game-menu-${game.id}`}
+                role="menu"
+                aria-label={`Действия с игрой ${game.title}`}
+                className="game-menu-popup"
+              >
+                <button
+                  role="menuitem"
+                  disabled={!game.localPath || !!transfer || deletionLoading}
+                  title={
+                    !game.localPath
+                      ? 'На устройстве нет файла этой игры'
+                      : transfer
+                        ? 'Сначала отмените передачу этой игры'
+                        : undefined
+                  }
+                  onClick={() => {
+                    setMenuOpen(false);
+                    menuButton.current?.focus();
+                    onDelete();
+                  }}
+                >
+                  <Trash2 size={15} /> Удалить игру
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
         <div className="game-meta">
           <span className={game.state === 'In Cloud' ? 'synced' : ''}>
             {game.cloudPath ? <Cloud size={12} /> : <HardDrive size={12} />}{' '}
@@ -1282,7 +1607,7 @@ function GameCard({
         <div className="game-actions">
           <button
             className={download ? 'download-game' : 'play-game'}
-            disabled={disabled || (download && !connected)}
+            disabled={disabled || (download ? !connected || !!transfer || preparing : emulatorRunning)}
             onClick={download ? () => onTransfer('download') : onPlay}
           >
             {download ? <ArrowDownToLine size={14} /> : <Play size={14} fill="currentColor" />}
@@ -1292,7 +1617,7 @@ function GameCard({
             <button
               className="upload-game"
               title="Upload to Cloud"
-              disabled={disabled || !connected}
+              disabled={disabled || !connected || !!transfer || preparing}
               onClick={() => onTransfer('upload')}
             >
               <ArrowUpFromLine size={14} />
@@ -1305,6 +1630,25 @@ function GameCard({
             </span>
           )}
         </div>
+        {transfer && (
+          <div className="game-transfer">
+            <span>
+              {transfer.state === 'queued'
+                ? 'Queued'
+                : transfer.state === 'cancelling'
+                  ? 'Cancelling…'
+                  : `${transfer.direction === 'upload' ? 'Uploading' : 'Downloading'} ${transfer.totalBytes ? Math.round((transfer.bytes / transfer.totalBytes) * 100) : 0}%`}
+            </span>
+            <button
+              className="icon-button"
+              aria-label={`Cancel transfer for ${game.title}`}
+              disabled={transfer.state === 'cancelling'}
+              onClick={() => onCancel(transfer.id)}
+            >
+              <X size={15} />
+            </button>
+          </div>
+        )}
       </div>
     </article>
   );

@@ -456,6 +456,10 @@ main {
   min-width: 0;
   animation: slide-up 0.35s both;
 }
+.game-card:focus-within {
+  position: relative;
+  z-index: 5;
+}
 .game-cover {
   border: 1px solid #34415b;
   border-radius: 8px;
@@ -600,6 +604,78 @@ main {
   font-size: 8px;
   color: #6f7e96;
   gap: 5px;
+}
+.game-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.game-title-row h3 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.game-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.game-menu-toggle {
+  width: 26px;
+  height: 26px;
+}
+.game-menu-popup {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  min-width: 170px;
+  padding: 5px;
+  background: #1b2332;
+  border: 1px solid #35435b;
+  border-radius: 7px;
+  box-shadow: 0 8px 30px #0008;
+}
+.game-menu-popup button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  width: 100%;
+  text-align: left;
+  color: #f3a1a1;
+  background: transparent;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.game-menu-popup button:hover,
+.game-menu-popup button:focus-visible {
+  background: #3c2935;
+}
+.game-menu-popup button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.button.primary.danger {
+  background: #bd414e;
+  border-color: #d55b66;
+  color: white;
+}
+.button.primary.danger:hover:not(:disabled) {
+  background: #d04d5b;
+}
+.delete-symbol,
+.delete-game-error {
+  color: #f3a1a1;
+}
+.delete-game-name {
+  font-weight: 600;
+  color: #e9edf6;
+}
+.delete-game-path {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  color: #8f9ab0;
 }
 .game-meta > span:first-child {
   display: flex;
@@ -1373,6 +1449,7 @@ main {
   }
   .brand > div:last-child,
   .nav-item > span,
+  .nav-item .download-manager-label,
   .nav-item b,
   .nav-item > svg:last-child:not(:first-child) {
     display: none;
@@ -1567,6 +1644,116 @@ main {
   }
   .sync-card code {
     min-height: 0;
+  }
+}
+.downloads-nav {
+  margin-top: auto;
+  width: 100%;
+  text-align: left;
+  flex-shrink: 0;
+}
+.download-manager-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 5px;
+}
+.download-manager-label small {
+  font-size: 10px;
+  color: #8f9ab0;
+  white-space: normal;
+}
+.downloads-description {
+  color: #8f9ab0;
+  font-size: 13px;
+  line-height: 1.7;
+  margin-bottom: 24px;
+}
+.empty-transfers {
+  text-align: center;
+  padding: 60px 24px;
+  color: #8f9ab0;
+}
+.empty-transfers h3 {
+  color: #e9edf6;
+}
+.transfer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.transfer-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 22px;
+  min-width: 0;
+}
+.transfer-direction {
+  padding-top: 4px;
+  color: #87adff;
+}
+.transfer-info {
+  flex: 1;
+  min-width: 0;
+}
+.transfer-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.transfer-title h3 {
+  margin: 0;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.transfer-title > span,
+.transfer-metrics {
+  color: #8f9ab0;
+  font-size: 11px;
+}
+.transfer-metrics {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+.transfer-metrics > :first-child {
+  color: #e9edf6;
+}
+.transfer-message {
+  color: #8f9ab0;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  margin: 12px 0 0;
+}
+.state-failed .transfer-message {
+  color: #ed8b8b;
+}
+.cancel-transfer {
+  flex-shrink: 0;
+}
+.game-transfer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  margin-top: 10px;
+  font-size: 10px;
+  color: #8f9ab0;
+}
+.game-transfer .icon-button {
+  width: 26px;
+  height: 26px;
+}
+@media (max-width: 900px) {
+  .transfer-row {
+    gap: 10px;
+    padding: 16px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

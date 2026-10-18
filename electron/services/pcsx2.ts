@@ -47,6 +47,7 @@ export function gameLaunchArgs(dataDirectory: string, game: string, fullscreen: 
   return ['-datapath', dataDirectory, '-nogui', fullscreen ? '-fullscreen' : '-nofullscreen', '--', game];
 }
 export class PCSX2Service {
+  gamePath?: string;
   private child?: ChildProcess;
   private installing = false;
   readonly profiles: PCSX2ProfileService;
@@ -195,16 +196,19 @@ export class PCSX2Service {
         stdio: 'ignore',
       });
       this.child = child;
+      this.gamePath = game;
       child.once('spawn', () => {
         this.emit({ operation: 'emulator', message: 'PCSX2 started', emulatorRunning: true });
         resolve();
       });
       child.once('error', (error) => {
         this.child = undefined;
+        this.gamePath = undefined;
         reject(error);
       });
       child.once('exit', (code) => {
         this.child = undefined;
+        this.gamePath = undefined;
         this.emit({
           operation: 'emulator',
           emulatorRunning: false,

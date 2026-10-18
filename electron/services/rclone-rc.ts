@@ -65,9 +65,17 @@ export class RcloneRemoteControl {
   private key = '';
   private password = '';
   private stopping = false;
+  private closing: Promise<void> = Promise.resolve();
+  async closed() {
+    await this.closing;
+  }
   dispose() {
     this.stopping = true;
-    this.child?.kill();
+    const child = this.child;
+    if (child && child.exitCode === null && child.signalCode === null) {
+      this.closing = new Promise<void>((resolve) => child.once('close', () => resolve()));
+      child.kill();
+    }
     this.child = undefined;
     this.ready = undefined;
     this.key = '';
@@ -195,6 +203,29 @@ export class RcloneRemoteControl {
     code: string | undefined,
     args: string[],
     progress?: (p: Progress) => void,
+    signal?: AbortSignal,
+  ) {
+    signal?.throwIfAborted();
+    const abort = () => this.dispose();
+    signal?.addEventListener('abort', abort, { once: true });
+    try {
+      return await this.execute(binary, config, code, args, progress);
+    } catch (error) {
+      if (signal?.aborted) {
+        await this.closed();
+        throw new DOMException('Transfer cancelled.', 'AbortError');
+      }
+      throw error;
+    } finally {
+      signal?.removeEventListener('abort', abort);
+    }
+  }
+  private async execute(
+    binary: string,
+    config: string,
+    code: string | undefined,
+    args: string[],
+    progress?: (p: Progress) => void,
   ) {
     const request = (endpoint: string, parameters: object = {}, timeout?: number) =>
       this.request(binary, config, code, endpoint, parameters, timeout);
@@ -215,11 +246,16 @@ export class RcloneRemoteControl {
       await request('operations/mkdir', splitLocation(from));
       return '';
     }
-    if (command !== 'copy' && command !== 'copyto') throw new Error('Unsupported cloud operation.');
+    if (command === 'deletefile') {
+      await request('operations/deletefile', splitFileLocation(from));
+      return '';
+    }
+    if (!['copy', 'copyto', 'moveto'].includes(command)) throw new Error('Unsupported cloud operation.');
     const backupIndex = args.indexOf('--backup-dir');
     const options = {
       IgnoreTimes: args.includes('--ignore-times'),
       ...(backupIndex < 0 ? {} : { BackupDir: args[backupIndex + 1] }),
+      ...(args.includes('--inplace') ? { Inplace: true } : {}),
     };
     for (const [flag, key] of [
       ['--multi-thread-streams', 'MultiThreadStreams'],
@@ -293,7 +329,7 @@ export class RcloneRemoteControl {
         const source = splitFileLocation(from),
           destination = splitFileLocation(to);
         await request(
-          'operations/copyfile',
+          command === 'moveto' ? 'operations/movefile' : 'operations/copyfile',
           {
             srcFs: source.fs,
             srcRemote: source.remote,

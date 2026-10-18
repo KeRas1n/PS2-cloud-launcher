@@ -7,10 +7,11 @@ const path = require('node:path');
   await fs.mkdir(root, { recursive: true });
   const desktop = await electron.launch({
     args: ['.'],
-    env: { ...process.env, PS2_LAUNCHER_SMOKE: '1', VITE_DEV_SERVER_URL: '' },
+    env: { ...process.env, PS2_LAUNCHER_SMOKE: '1', VITE_DEV_SERVER_URL: '', RCLONE_BWLIMIT: '2M' },
   });
   try {
     const page = await desktop.firstWindow();
+    page.setDefaultTimeout(20000);
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await expect(page.getByRole('heading', { name: 'Game library' })).toBeVisible();
@@ -54,7 +55,7 @@ const path = require('node:path');
       }),
     );
     await expect(page.getByRole('status')).toContainText('64.0 KiB/s');
-    await expect(page.getByRole('status')).toContainText('avg 32.0 KiB/s');
+    await expect(page.getByRole('status')).not.toContainText('avg');
     await desktop.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].webContents.send('progress', {
         operation: 'sync',
@@ -66,6 +67,7 @@ const path = require('node:path');
     await page.getByRole('button', { name: 'Dismiss activity' }).click();
     await page.screenshot({ path: path.join(root, 'cloud.png'), fullPage: true });
     const provider = page.getByLabel('Cloud storage', { exact: false });
+    await expect(provider.locator('option').first()).toHaveText('MEGA (Recomended)');
     await provider.selectOption('mega');
     await expect(page.getByRole('heading', { name: 'MEGA', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Connect MEGA', exact: true })).toBeDisabled();
@@ -89,7 +91,7 @@ const path = require('node:path');
       'true',
     );
     await expect(page.getByLabel('Dropbox remote name', { exact: false })).toHaveCount(0);
-    const downloadDirectory = path.join(root, 'tab-downloads');
+    const downloadDirectory = path.join(root, `tab-downloads-${Date.now()}`);
     await page.getByRole('textbox', { name: /^Game download directory/ }).fill(downloadDirectory);
     await page.getByRole('tab', { name: 'Emulator', exact: true }).click();
     const fullscreen = page.getByLabel('Launch games in fullscreen', { exact: false });
@@ -141,7 +143,11 @@ const path = require('node:path');
       globalThis.originalOpenDialog = dialog.showOpenDialog;
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
     }, path.resolve('assets/icon.png'));
-    await page.locator('.game-cover').hover();
+    await page
+      .locator('.game-card')
+      .filter({ has: page.getByRole('heading', { name: 'Test Disc', exact: true }) })
+      .locator('.game-cover')
+      .hover();
     await page.getByRole('button', { name: 'Import cover for Test Disc', exact: true }).click();
     await expect(page.getByAltText('Test Disc cover')).toBeVisible({ timeout: 30000 });
     await expect
@@ -156,6 +162,103 @@ const path = require('node:path');
       await page.getByRole('button', { name: 'Dismiss error' }).click();
     }
     await page.screenshot({ path: path.join(root, 'library-with-fixture.png'), fullPage: true });
+    // Real background jobs through secure IPC and the bundled Rclone. Local alias only.
+    const cloud = path.join(root, `transfer-remote-${Date.now()}`);
+    await fs.mkdir(path.join(cloud, 'PS2Cloud', 'Games'), { recursive: true });
+    for (const title of ['Queued A', 'Queued B', 'Queued C']) {
+      await fs.writeFile(
+        path.join(
+          cloud,
+          'PS2Cloud',
+          'Games',
+          `${title}.${title === 'Queued A' ? 'bin' : title === 'Queued C' ? 'gs.xz' : 'iso'}`,
+        ),
+        Buffer.alloc(128 * 1024 * 1024, 0x42),
+      );
+    }
+    const settings = (await page.evaluate(() => window.launcher.snapshot())).settings;
+    await fs.mkdir(path.dirname(settings.rcloneConfig), { recursive: true });
+    await fs.writeFile(settings.rcloneConfig, `[test-dropbox]\ntype = alias\nremote = ${cloud}\n`);
+    await page.getByRole('button', { name: 'Refresh library', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Queued A', exact: true })).toBeVisible({
+      timeout: 30000,
+    });
+    await expect(
+      page
+        .locator('.game-card')
+        .filter({ has: page.getByRole('heading', { name: 'Queued A', exact: true }) })
+        .locator('.cover-format'),
+    ).toHaveText('BIN');
+    await expect(
+      page
+        .locator('.game-card')
+        .filter({ has: page.getByRole('heading', { name: 'Queued C', exact: true }) })
+        .locator('.cover-format'),
+    ).toHaveText('GS.XZ');
+    await page.getByRole('button', { name: 'Download manager', exact: true }).click();
+    await expect(page.getByText('No transfers yet', { exact: true })).toBeVisible();
+    const queued = await page.evaluate(async () => {
+      const library = await window.launcher.library();
+      const result = [];
+      for (const title of ['Queued A', 'Queued B', 'Queued C']) {
+        const game = library.games.find((game) => game.title === title);
+        const plan = await window.launcher.planSync({
+          kind: 'Games',
+          direction: 'download',
+          gameId: game.id,
+        });
+        result.push(await window.launcher.enqueueSync(plan.id, true));
+      }
+      return result;
+    });
+    await expect
+      .poll(async () => (await page.evaluate(() => window.launcher.transfers())).map((t) => t.state))
+      .toEqual(['running', 'running', 'queued']);
+    await expect(page.getByRole('article', { name: 'download Queued C', exact: true })).toContainText(
+      'Queued',
+    );
+    await expect
+      .poll(async () => (await page.evaluate(() => window.launcher.transfers()))[0].speed)
+      .toBeGreaterThan(0);
+    await page.screenshot({ path: path.join(root, 'downloads.png'), fullPage: true });
+    await page.getByRole('navigation').getByRole('button', { name: 'Games', exact: true }).click();
+    const installed = page
+      .locator('.game-card')
+      .filter({ has: page.getByRole('heading', { name: 'Test Disc', exact: true }) });
+    await expect(installed.getByRole('button', { name: 'Play', exact: true })).toBeEnabled();
+    // Reaching the normal missing-emulator error proves transfers do not reject launch IPC.
+    if (!(await page.evaluate(() => window.launcher.snapshot())).emulator.installed) {
+      await installed.getByRole('button', { name: 'Play', exact: true }).click();
+      await expect(page.getByRole('alert')).toContainText('Install PCSX2');
+      await page.getByRole('button', { name: 'Dismiss error' }).click();
+    }
+    await page.getByRole('button', { name: 'Cancel transfer for Queued A', exact: true }).click();
+    await page.getByRole('button', { name: 'Download manager', exact: true }).click();
+    await expect
+      .poll(
+        async () =>
+          (await page.evaluate(() => window.launcher.transfers())).find((t) => t.id === queued[0].id).state,
+      )
+      .toBe('cancelled');
+    await expect(page.getByRole('article', { name: 'download Queued B', exact: true })).toContainText(
+      /KiB\/s|MiB\/s/,
+    );
+    await page.getByRole('button', { name: 'Cancel download Queued C', exact: true }).click();
+    await expect
+      .poll(
+        async () =>
+          (await page.evaluate(() => window.launcher.transfers())).find((t) => t.id === queued[1].id).state,
+        { timeout: 90000 },
+      )
+      .toBe('completed');
+    const downloaded = await fs.readdir(settings.downloadDirectory);
+    expect(downloaded).toContain('Queued B.iso');
+    expect(downloaded).not.toContain('Queued A.bin');
+    expect(downloaded.some((name) => name.endsWith('.partial'))).toBe(false);
+    await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(780, 760));
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: path.join(root, 'downloads-responsive.png'), fullPage: true });
+    await page.getByRole('navigation').getByRole('button', { name: 'Games', exact: true }).click();
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(780, 760));
     await page.screenshot({ path: path.join(root, 'responsive.png'), fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -167,7 +270,7 @@ const path = require('node:path');
     await page.screenshot({ path: path.join(root, 'settings-responsive.png'), fullPage: true });
     expect(errors).toEqual([]);
     console.log(
-      'Electron smoke passed: secure preload, four pages, settings tabs/keyboard/draft persistence, settings IPC, filesystem scanning, cover import/protocol, launch error, responsive layout.',
+      'Electron smoke passed: secure preload, settings, cloud switching, real concurrent Rclone downloads/queue/cancellation, launch during transfers, current speed, download manager and responsive layout.',
     );
   } finally {
     await desktop.close();

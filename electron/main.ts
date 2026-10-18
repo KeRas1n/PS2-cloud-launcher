@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } from 'elect
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Progress } from '../shared/types';
 import { SettingsStore } from './services/settings';
@@ -10,6 +11,7 @@ import { RcloneService } from './services/rclone';
 import { GameService } from './services/games';
 import { SyncService } from './services/sync';
 import { AutoSyncService, SyncCancelled } from './services/auto-sync';
+import { TransferQueue } from './services/transfer-queue';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'launcher-cover', privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -61,7 +63,7 @@ async function start() {
               detail: `${error.message}\nLocal saves remain on this device. Retry from Cloud before playing on another device.`,
             });
         });
-      }
+      } else transfers.wake();
     }),
     rclone = new RcloneService(
       store,
@@ -103,6 +105,13 @@ async function start() {
   );
   let sessionCloud = false;
   let modifying = false;
+  const transfers = new TransferQueue(
+    (items) => {
+      if (window && !window.isDestroyed()) window.webContents.send('transfers', items);
+    },
+    2,
+    (item) => item.kind === 'Games' || (!modifying && !pcsx2.running && !autoSync.busy),
+  );
   const exclusive = async <T>(action: () => Promise<T>): Promise<T> => {
     if (modifying || sync.busy || autoSync.busy)
       throw new Error('Another operation is in progress. Please wait.');
@@ -111,8 +120,60 @@ async function start() {
       return await action();
     } finally {
       modifying = false;
+      transfers.wake();
     }
   };
+  async function enqueueTransfer(planId: unknown, confirmed: unknown) {
+    const prepared = sync.detach(z.string().uuid().parse(planId), z.boolean().parse(confirmed));
+    const settings = structuredClone(store.value);
+    const directory = path.join(store.userData, 'transfer-staging', randomUUID());
+    let close: (() => Promise<void>) | undefined;
+    try {
+      const { client, store: scopedStore } = await rclone.createTransferClient(settings, directory);
+      close = () => client.close();
+      const scopedGames = new GameService(scopedStore, client);
+      scopedGames.games = new Map([...games.games].map(([id, game]) => [id, structuredClone(game)]));
+      const request = prepared.request;
+      const game = request.gameId ? scopedGames.get(request.gameId) : undefined;
+      const root =
+        request.kind === 'Games'
+          ? settings.downloadDirectory
+          : request.kind === 'Memcards'
+            ? settings.memcardsDirectory
+            : settings.saveStatesDirectory;
+      const keys = prepared.plan.files.flatMap((file) => [
+        `local:${path.resolve(request.direction === 'upload' && game?.localPath ? game.localPath : path.join(root, file.path)).toLowerCase()}`,
+        `remote:${settings.cloudProvider}:${settings.rcloneConfig}:${settings.remote}:${settings.cloudRoot}/${request.kind}/${file.path}`.toLowerCase(),
+      ]);
+      return transfers.add(
+        {
+          title: game?.title ?? (request.kind === 'Memcards' ? 'Memory cards' : 'Save states'),
+          kind: request.kind,
+          direction: request.direction,
+          provider: settings.cloudProvider,
+          gameId: request.gameId,
+          totalBytes: prepared.plan.bytes,
+        },
+        keys,
+        async (signal, progress) => {
+          client.setCancellation(signal);
+          const worker = new SyncService(scopedStore, client, scopedGames, pcsx2, progress, true, signal);
+          worker.adopt(prepared);
+          await worker.execute(prepared.plan.id, true);
+        },
+        async () => {
+          await client.close();
+          await fs.rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+        },
+      );
+    } catch (error) {
+      await close?.();
+      await fs
+        .rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+        .catch(() => {});
+      throw error;
+    }
+  }
   function handle(channel: string, callback: (...args: any[]) => unknown) {
     ipcMain.handle(channel, async (event, ...args: unknown[]) => {
       const url = event.senderFrame?.url;
@@ -167,6 +228,30 @@ async function start() {
   );
   handle('dialog:pick', (kind) => pick(z.enum(['directory', 'executable', 'bios', 'cover']).parse(kind)));
   handle('games:list', () => games.scan());
+  const guardDeletion = (gameId: string) => {
+    const game = games.get(gameId);
+    if (game.localPath && transfers.has(`local:${path.resolve(game.localPath).toLowerCase()}`))
+      throw new Error('Cancel this game transfer before deleting its local file.');
+    if (
+      game.localPath &&
+      pcsx2.running &&
+      pcsx2.gamePath &&
+      path.resolve(game.localPath).toLowerCase() === path.resolve(pcsx2.gamePath).toLowerCase()
+    )
+      throw new Error('Close this game before deleting its local file.');
+  };
+  handle('games:delete-preview', async (gameId) => {
+    const parsed = id.parse(gameId);
+    guardDeletion(parsed);
+    return games.prepareDelete(parsed);
+  });
+  handle('games:delete', (token, confirmed) =>
+    exclusive(async () => {
+      const parsed = z.string().uuid().parse(token);
+      guardDeletion(games.deletionGame(parsed).id);
+      await games.deleteLocal(parsed, z.boolean().parse(confirmed));
+    }),
+  );
   handle('emulator:install', () => exclusive(() => pcsx2.install()));
   handle('emulator:prepare', () => exclusive(() => pcsx2.prepare()));
   handle('emulator:select-bios', (name) =>
@@ -177,6 +262,8 @@ async function start() {
       const game = gameId === undefined ? undefined : games.get(id.parse(gameId));
       if (game && !game.localPath) throw new Error('Download this game before playing.');
       if (pcsx2.running) throw new Error('PCSX2 is already running.');
+      if (transfers.activeSaves)
+        throw new Error('Finish or cancel save synchronization before playing. Game transfers can continue.');
       sessionCloud = false;
       if (game && store.value.autoSyncSaves) {
         // Prepare first: profile migration may select existing populated save folders.
@@ -252,29 +339,41 @@ async function start() {
     }),
   );
   app.on('will-quit', () => rclone.dispose());
-  handle('saves:sync', () => exclusive(() => autoSync.synchronize()));
+  handle('saves:sync', () =>
+    exclusive(() => {
+      if (transfers.activeSaves) throw new Error('A save transfer is already running.');
+      return autoSync.synchronize();
+    }),
+  );
   handle('transfers:logs', async () => {
     const error = await shell.openPath(await rclone.transferLogDirectory());
     if (error) throw new Error('Could not open transfer logs.');
   });
-  handle('sync:plan', (request) =>
-    exclusive(() =>
-      sync.plan(
-        z
-          .object({
-            kind: z.enum(['Games', 'Memcards', 'SaveStates']),
-            direction: z.enum(['upload', 'download']),
-            gameId: id.optional(),
-          })
-          .strict()
-          .parse(request),
-      ),
-    ),
-  );
-  handle('sync:execute', (planId, confirmed) =>
-    exclusive(() => sync.execute(z.string().uuid().parse(planId), z.boolean().parse(confirmed))),
-  );
+  handle('sync:plan', (request) => {
+    const input = z
+      .object({
+        kind: z.enum(['Games', 'Memcards', 'SaveStates']),
+        direction: z.enum(['upload', 'download']),
+        gameId: id.optional(),
+      })
+      .strict()
+      .parse(request);
+    return input.kind === 'Games' ? sync.plan(input) : exclusive(() => sync.plan(input));
+  });
+  handle('sync:enqueue', (planId, confirmed) => exclusive(() => enqueueTransfer(planId, confirmed)));
+  handle('sync:execute', async (planId, confirmed) => {
+    await exclusive(() => enqueueTransfer(planId, confirmed));
+  });
+  handle('transfers:list', () => transfers.list());
+  handle('transfers:cancel', (id) => transfers.cancel(z.string().uuid().parse(id)));
   handle('sync:cancel', (planId) => sync.cancel(z.string().uuid().parse(planId)));
+  let quitting = false;
+  app.on('before-quit', (event) => {
+    if (quitting) return;
+    event.preventDefault();
+    quitting = true;
+    void transfers.shutdown().finally(() => app.quit());
+  });
   handle('link:open', (link) =>
     shell.openExternal(
       {

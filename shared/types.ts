@@ -37,6 +37,13 @@ export interface Game {
   cloudPath?: string;
   cover?: string;
 }
+export interface GameDeletion {
+  token: string;
+  gameId: string;
+  title: string;
+  localPath: string;
+  cloud: 'stored' | 'missing' | 'unknown';
+}
 export interface EmulatorStatus {
   profile?: EmulatorProfile;
   installed: boolean;
@@ -90,6 +97,21 @@ export interface SyncPlan {
   bytes: number;
   backupLocation: string;
 }
+export type TransferState = 'queued' | 'running' | 'cancelling' | 'completed' | 'cancelled' | 'failed';
+export interface Transfer {
+  id: string;
+  title: string;
+  kind: SyncKind;
+  direction: Direction;
+  provider: CloudProvider;
+  gameId?: string;
+  state: TransferState;
+  bytes: number;
+  totalBytes: number;
+  speed: number;
+  message: string;
+  error?: string;
+}
 export interface Progress {
   operation: string;
   message: string;
@@ -117,6 +139,8 @@ export interface LauncherAPI {
   openEmulator(gameId?: string): Promise<void>;
   importBios(): Promise<number>;
   setCover(gameId: string): Promise<void>;
+  prepareDeleteGame(gameId: string): Promise<GameDeletion>;
+  deleteGame(token: string, confirmed: boolean): Promise<void>;
   installRclone(): Promise<void>;
   connectCloud(credentials?: MegaCredentials): Promise<CloudStatus>;
   selectCloudProvider(provider: CloudProvider): Promise<Settings>;
@@ -124,6 +148,10 @@ export interface LauncherAPI {
   openTransferLogs(): Promise<void>;
   planSync(request: SyncRequest): Promise<SyncPlan>;
   executeSync(id: string, confirmed: boolean): Promise<void>;
+  enqueueSync(id: string, confirmed: boolean): Promise<Transfer>;
+  transfers(): Promise<Transfer[]>;
+  cancelTransfer(id: string): Promise<void>;
+  onTransfers(callback: (transfers: Transfer[]) => void): () => void;
   cancelPlan(id: string): Promise<void>;
   openLink(link: 'pcsx2' | 'rclone' | 'dropbox' | 'mega'): Promise<void>;
   onProgress(callback: (progress: Progress) => void): () => void;

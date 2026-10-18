@@ -6,9 +6,14 @@ export interface RunOptions {
   maxOutput?: number;
   privateOutput?: boolean;
   privateError?: string;
+  signal?: AbortSignal;
 }
 export function run(binary: string, args: string[], options: RunOptions = {}): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (options.signal?.aborted) {
+      reject(new DOMException('Transfer cancelled.', 'AbortError'));
+      return;
+    }
     const child = spawn(binary, args, {
       cwd: options.cwd,
       shell: false,
@@ -19,6 +24,9 @@ export function run(binary: string, args: string[], options: RunOptions = {}): P
       stderr = '',
       pending = '';
     let failed = false;
+    const abort = () => child.kill();
+    options.signal?.addEventListener('abort', abort, { once: true });
+    if (options.signal?.aborted) abort();
     const timer = setTimeout(() => {
       failed = true;
       child.kill();
@@ -42,10 +50,16 @@ export function run(binary: string, args: string[], options: RunOptions = {}): P
     });
     child.on('error', (error) => {
       clearTimeout(timer);
+      options.signal?.removeEventListener('abort', abort);
       reject(new Error(`Could not start ${binary}: ${error.message}`));
     });
     child.on('close', (code) => {
       clearTimeout(timer);
+      options.signal?.removeEventListener('abort', abort);
+      if (options.signal?.aborted) {
+        reject(new DOMException('Transfer cancelled.', 'AbortError'));
+        return;
+      }
       if (failed) return;
       if (pending) options.onLine?.(pending);
       if (code === 0) resolve(stdout);

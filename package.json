@@ -18,6 +18,8 @@
     "test:integration": "node scripts/integration.cjs",
     "test:installer": "node scripts/verify-installer.cjs",
     "test:cloud": "node scripts/verify-cloud.cjs",
+    "test:transfers": "node scripts/verify-transfers.cjs",
+    "test:game-deletion": "node scripts/verify-game-deletion.cjs",
     "benchmark:mega": "node scripts/benchmark-mega.cjs"
   },
   "dependencies": {

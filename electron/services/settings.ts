@@ -149,6 +149,7 @@ export class SettingsStore {
       throw new Error('BIOS, memory cards and save states need separate, non-overlapping directories.');
     const backups = path.join(this.userData, 'backups');
     const autoSync = path.join(this.userData, 'auto-sync');
+    const transfers = path.join(this.userData, 'transfer-staging');
     for (const folder of [settings.memcardsDirectory, settings.saveStatesDirectory]) {
       if (
         contains(folder, this.userData) ||
@@ -156,7 +157,9 @@ export class SettingsStore {
         contains(folder, backups) ||
         contains(backups, folder) ||
         contains(folder, autoSync) ||
-        contains(autoSync, folder)
+        contains(autoSync, folder) ||
+        contains(folder, transfers) ||
+        contains(transfers, folder)
       )
         throw new Error(
           'Save sync directories must not contain launcher credentials, preferences, or backups.',
