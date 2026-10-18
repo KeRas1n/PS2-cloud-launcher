@@ -117,8 +117,25 @@ const path = require('node:path');
     await expect(remote).toHaveValue('test-dropbox');
     await expect(page.getByRole('tabpanel')).toHaveCount(1);
     await expect(page.getByRole('button', { name: 'Save changes' })).toHaveCount(1);
+    // Screen remounts and background snapshot refreshes must retain all unsaved edits.
+    await page.getByRole('navigation').getByRole('button', { name: 'Cloud', exact: true }).click();
+    await page.getByRole('button', { name: 'Check connection', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Check connection', exact: true })).toBeEnabled();
+    await page.getByRole('navigation').getByRole('button', { name: 'Settings', exact: true }).click();
+    await expect(page.getByText('Unsaved changes.', { exact: true })).toBeVisible();
+    await page.getByText('Advanced cloud settings', { exact: true }).click();
+    await expect(remote).toHaveValue('test-dropbox');
+    await page.getByRole('tab', { name: 'Games', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: /^Game download directory/ })).toHaveValue(
+      downloadDirectory,
+    );
+    await page.getByRole('tab', { name: 'Emulator', exact: true }).click();
+    await expect(fullscreen).toBeChecked({ checked: !initialFullscreen });
+    await page.getByRole('tab', { name: 'Cloud', exact: true }).click();
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByText('Preferences saved', { exact: true })).toBeVisible({ timeout: 30000 });
+    await expect(page.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+    await expect(page.getByText('Unsaved changes.', { exact: true })).toHaveCount(0);
     const savedSettings = (await page.evaluate(() => window.launcher.snapshot())).settings;
     expect(savedSettings.remote).toBe('test-dropbox');
     expect(savedSettings.downloadDirectory).toBe(downloadDirectory);
@@ -270,7 +287,7 @@ const path = require('node:path');
     await page.screenshot({ path: path.join(root, 'settings-responsive.png'), fullPage: true });
     expect(errors).toEqual([]);
     console.log(
-      'Electron smoke passed: secure preload, settings, cloud switching, real concurrent Rclone downloads/queue/cancellation, launch during transfers, current speed, download manager and responsive layout.',
+      'Electron smoke passed: secure preload, settings draft persistence across navigation/refresh, cloud switching, real concurrent Rclone downloads/queue/cancellation, launch during transfers, current speed, download manager and responsive layout.',
     );
   } finally {
     await desktop.close();

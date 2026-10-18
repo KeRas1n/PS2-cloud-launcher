@@ -1,0 +1,134 @@
+.message {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px 15px;
+  margin-bottom: 23px;
+  border: 1px solid #4a5065;
+  border-radius: 7px;
+  font-size: 11px;
+  line-height: 1.7;
+  background: #20283a;
+  color: #b3c1dc;
+  overflow-wrap: anywhere;
+}
+.message > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.message span {
+  flex: 1;
+  min-width: 0;
+}
+.message button,
+.toast button {
+  background: transparent;
+  color: inherit;
+  display: grid;
+  place-items: center;
+  padding: 2px;
+}
+.error {
+  border-color: #764b555f;
+  background: #40232c50;
+  color: #dcb3bc;
+}
+.loading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  color: #91a9ce;
+  padding: 20px 0;
+  font-size: 12px;
+}
+.warnings {
+  background: #1e2433;
+  border: 1px solid #303b50;
+  border-radius: 5px;
+  padding: 10px 13px;
+  margin-bottom: 22px;
+  font-size: 10px;
+  color: #93a6c6;
+}
+.warnings summary {
+  cursor: pointer;
+}
+.warnings p {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+  margin: 9px 0;
+}
+.operation-bar {
+  position: fixed;
+  bottom: 0;
+  left: 232px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  border-top: 1px solid #354563;
+  padding: 15px 35px;
+  background: #141f32f5;
+  backdrop-filter: blur(16px);
+  z-index: 25;
+  box-shadow: 0 -8px 30px #0003;
+}
+.operation-symbol {
+  color: #81aaff;
+}
+.operation-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+.operation-detail strong {
+  font-size: 11px;
+  font-weight: 600;
+}
+.operation-detail span {
+  font-size: 10px;
+  color: #89a0c4;
+  overflow-wrap: anywhere;
+}
+.operation-bar > small {
+  font-size: 10px;
+  text-align: right;
+}
+.progress-track {
+  height: 3px;
+  border-radius: 5px;
+  background: #2e405f;
+  overflow: hidden;
+  margin-top: 3px;
+}
+.progress-track > div {
+  height: 100%;
+  background: #739fff;
+  transition: width 0.3s;
+}
+.toast {
+  position: fixed;
+  right: 28px;
+  top: 90px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #1f3a33;
+  color: #b7e1cc;
+  border: 1px solid #427760;
+  border-radius: 8px;
+  padding: 16px 18px;
+  font-size: 11px;
+  z-index: 60;
+  box-shadow: 0 10px 40px #0005;
+  max-width: 480px;
+  animation: slide-up 0.2s;
+}
+.toast > svg {
+  flex-shrink: 0;
+}
+.toast > button {
+  margin-left: 10px;
+}

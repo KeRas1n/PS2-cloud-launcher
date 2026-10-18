@@ -1,0 +1,126 @@
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: #050912b8;
+  backdrop-filter: blur(7px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 25px;
+}
+.modal {
+  width: 570px;
+  max-height: calc(100vh - 50px);
+  overflow: auto;
+  border: 1px solid #3d4f6f;
+  border-radius: 13px;
+  padding: 29px;
+  background: linear-gradient(140deg, #1d293f, #131c2c);
+  box-shadow: 0 20px 100px #0008;
+  animation: slide-up 0.2s;
+}
+.modal-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.modal h2 {
+  font-size: 26px;
+  margin: 12px 0;
+}
+.modal > p {
+  font-size: 12px;
+}
+.conflict-warning {
+  font-size: 11px;
+  line-height: 1.7;
+  border: 1px solid #7c643f88;
+  background: #4a381e55;
+  border-radius: 5px;
+  color: #d6bc8d;
+  padding: 13px;
+  margin: 20px 0;
+}
+.safe-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #85c5ae;
+  margin: 20px 0;
+}
+.transfer-files {
+  max-height: 225px;
+  overflow: auto;
+  border: 1px solid #34425b;
+  border-radius: 6px;
+  margin-bottom: 20px;
+}
+.transfer-files > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 13px;
+  border-bottom: 1px solid #2e3b51;
+}
+.transfer-files > div:last-child {
+  border: 0;
+}
+.transfer-files strong {
+  font-size: 11px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.transfer-files small {
+  display: block;
+  font-size: 9px;
+  margin-top: 5px;
+}
+.replace-tag,
+.new-tag {
+  font-size: 9px;
+  padding: 4px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.replace-tag {
+  color: #d3ac7c;
+  background: #513a2466;
+}
+.new-tag {
+  color: #93c7b6;
+  background: #244d4255;
+}
+.backup-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 10px;
+  color: #9ab1d0;
+}
+.backup-note > svg {
+  flex-shrink: 0;
+}
+.backup-note code {
+  display: block;
+  font-size: 9px;
+  margin-top: 7px;
+  line-height: 1.7;
+}
+.modal .modal-help {
+  font-size: 10px;
+  line-height: 1.8;
+  margin: 20px 0;
+  color: #8195b3;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #34415a;
+  padding-top: 20px;
+}

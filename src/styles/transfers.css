@@ -1,0 +1,118 @@
+.downloads-nav {
+  margin-top: auto;
+  width: 100%;
+  text-align: left;
+  flex-shrink: 0;
+}
+.download-manager-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 5px;
+}
+.download-manager-label small {
+  font-size: 10px;
+  color: #8f9ab0;
+  white-space: normal;
+}
+.downloads-description {
+  color: #8f9ab0;
+  font-size: 13px;
+  line-height: 1.7;
+  margin-bottom: 24px;
+}
+.empty-transfers {
+  text-align: center;
+  padding: 60px 24px;
+  color: #8f9ab0;
+}
+.empty-transfers h3 {
+  color: #e9edf6;
+}
+.transfer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.transfer-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 22px;
+  min-width: 0;
+}
+.transfer-direction {
+  padding-top: 4px;
+  color: #87adff;
+}
+.transfer-info {
+  flex: 1;
+  min-width: 0;
+}
+.transfer-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.transfer-title h3 {
+  margin: 0;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.transfer-title > span,
+.transfer-metrics {
+  color: #8f9ab0;
+  font-size: 11px;
+}
+.transfer-metrics {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+.transfer-metrics > :first-child {
+  color: #e9edf6;
+}
+.transfer-message {
+  color: #8f9ab0;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  margin: 12px 0 0;
+}
+.state-failed .transfer-message {
+  color: #ed8b8b;
+}
+.cancel-transfer {
+  flex-shrink: 0;
+}
+.game-transfer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  margin-top: 10px;
+  font-size: 10px;
+  color: #8f9ab0;
+}
+.game-transfer .icon-button {
+  width: 26px;
+  height: 26px;
+}
+@media (max-width: 900px) {
+  .transfer-row {
+    gap: 10px;
+    padding: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *:before,
+  *:after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,0 +1,147 @@
+.page-heading {
+  margin: 9px 0 31px;
+}
+.page-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+.page-heading h1 {
+  font-size: 33px;
+  font-weight: 600;
+  margin: 0;
+  line-height: 1.2;
+}
+.page-heading p {
+  font-size: 12px;
+}
+.panel {
+  border: 1px solid #293244;
+  background: linear-gradient(125deg, #171e2b, #141a25);
+  border-radius: 9px;
+  padding: 26px;
+  margin-bottom: 22px;
+}
+.panel h3 {
+  margin: 15px 0 10px;
+}
+.panel p {
+  font-size: 12px;
+  margin-bottom: 20px;
+}
+.panel code {
+  display: block;
+  line-height: 1.6;
+  font-size: 11px;
+}
+.two-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+}
+.two-columns > .panel {
+  min-width: 0;
+}
+.panel-symbol {
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  background: #273854;
+  color: #92b3ef;
+  display: grid;
+  place-items: center;
+}
+.panel-symbol svg {
+  width: 21px;
+}
+.emulator-panel {
+  display: flex;
+  gap: 30px;
+  padding: 26px;
+  align-items: center;
+}
+.profile-directory {
+  margin-top: 14px;
+  color: #7f8ba0;
+  font-size: 11px;
+}
+.emulator-detail {
+  min-width: 0;
+}
+.row {
+  display: flex;
+  gap: 17px;
+  align-items: center;
+}
+.emulator-detail p {
+  margin: 9px 0 13px;
+}
+.emulator-version {
+  font-size: 12px;
+  color: #bac9e0;
+  margin-bottom: 8px;
+}
+.button-row {
+  display: flex;
+  gap: 11px;
+  margin-top: 23px;
+  flex-wrap: wrap;
+}
+.provider-panel {
+  display: flex;
+  align-items: center;
+  gap: 21px;
+  padding: 29px;
+}
+.provider-copy {
+  flex: 1;
+}
+.provider-copy p {
+  font-size: 11px;
+  margin: 10px 0 6px;
+}
+.provider-copy small {
+  font-size: 10px;
+}
+.sync-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.folder-label {
+  font-size: 10px;
+  color: #7587a6;
+  letter-spacing: 0.03em;
+}
+.sync-card p {
+  font-size: 11px;
+}
+.sync-card code {
+  min-height: 36px;
+}
+.sync-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+}
+.sync-buttons .button {
+  justify-content: flex-start;
+  padding: 12px 13px;
+  font-size: 11px;
+  background: #1c273b80;
+}
+.cloud-location {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+  color: #8a9ab3;
+  margin: 24px 0;
+  overflow-wrap: anywhere;
+}
+.cloud-location > span {
+  margin-left: auto;
+  color: #5e708c;
+  font-size: 9px;
+}

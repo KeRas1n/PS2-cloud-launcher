@@ -4,6 +4,8 @@ A local-first Electron launcher for Windows and Linux. React, TypeScript and Vit
 
 ## Development
 
+See [application architecture](docs/architecture.md) for module boundaries, state ownership and verification.
+
 Use Node.js 22 or newer and npm on Windows x86-64 or Linux x86-64.
 
 ```sh
@@ -32,6 +34,7 @@ Integration tests are opt-in: they download official PCSX2 and Rclone binaries i
 3. **Settings:** add folders containing your own PCSX2 images. Supported extensions: `.iso`, `.bin`, `.img`, `.mdf`, `.gz`, `.cso`, `.zso`, `.chd`, `.elf`, `.dump`, `.gs`, `.gs.xz`, `.gs.zst` (disc images, homebrew and diagnostic dumps, matching [PCSX2's loadable formats](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/VMManager.cpp)). Save preferences. Scanning is recursive, skips hidden entries and symbolic links, and includes the game download directory automatically. The same formats work locally and in cloud transfers.
 
    `.cue`/`.toc` files describe a disc; they do not contain its data. [PCSX2 does not open them directly](https://pcsx2.net/docs/setup/discs/). For CUE/BIN dumps, include the associated `.bin` image in a scanned folder; the launcher lists and launches that image. A CUE without its referenced images produces a library warning. ZIP/7z/RAR archives need extraction first. GS dumps replay graphics and are not playable games.
+
 4. **Cloud:** choose **Dropbox** or **MEGA**. Dropbox connects through browser authorization; MEGA uses the email/password form, with an optional two-factor code. Windows/Linux x64 packages include Rclone as a private cloud component; no separate application installation or configuration is needed. Development builds download it automatically on connection when unavailable. You supply your own cloud account, without developer API keys or a hosted service.
 5. Saves synchronize automatically before gameplay and after PCSX2 closes. Keep the launcher open while playing. Use **Sync saves now** to retry, or disable automatic synchronization in Settings. Games transfer only on request through game-card actions. Manual upload/download buttons still offer a preview before transferring.
 

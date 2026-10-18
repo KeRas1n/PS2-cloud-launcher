@@ -1,0 +1,263 @@
+@media (min-width: 1450px) {
+  .game-grid {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  }
+}
+@media (max-width: 1120px) {
+  .sidebar {
+    width: 194px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .brand {
+    padding-left: 7px;
+    font-size: 22px;
+    gap: 9px;
+  }
+  .brand span {
+    font-size: 7px;
+  }
+  .brand-icon {
+    width: 37px;
+    height: 39px;
+  }
+  .workspace {
+    margin-left: 194px;
+    width: calc(100% - 194px);
+  }
+  .operation-bar {
+    left: 194px;
+  }
+  .topbar {
+    padding: 0 28px;
+  }
+  main {
+    padding: 27px 28px 80px;
+  }
+  .game-grid {
+    grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+    gap: 20px 15px;
+  }
+  .emulator-panel {
+    padding: 26px;
+    gap: 25px;
+  }
+  .cloud-location {
+    flex-wrap: wrap;
+  }
+  .cloud-location > span {
+    margin-left: 0;
+  }
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 850px) {
+  .sidebar {
+    width: 76px;
+    padding: 28px 11px;
+  }
+  .brand {
+    padding: 0;
+    margin-bottom: 44px;
+    justify-content: center;
+  }
+  .brand > div:last-child,
+  .nav-item > span,
+  .nav-item .download-manager-label,
+  .nav-item b,
+  .nav-item > svg:last-child:not(:first-child) {
+    display: none;
+  }
+  .nav-item {
+    justify-content: center;
+    padding: 15px 0;
+    margin-bottom: 10px;
+  }
+  .nav-item.active:before {
+    left: -11px;
+  }
+  .workspace {
+    margin-left: 76px;
+    width: calc(100% - 76px);
+  }
+  .operation-bar {
+    left: 76px;
+  }
+  .topbar {
+    height: 66px;
+    padding: 0 24px;
+  }
+  .topbar-actions {
+    gap: 12px;
+  }
+  main {
+    padding: 24px 24px 80px;
+  }
+  .two-columns {
+    gap: 15px;
+  }
+  .panel {
+    padding: 22px;
+  }
+  .provider-panel {
+    gap: 15px;
+    flex-wrap: wrap;
+  }
+  .provider-copy {
+    min-width: 220px;
+  }
+  .provider-panel > .button {
+    margin-left: 0;
+  }
+  .library-toolbar {
+    flex-wrap: wrap;
+  }
+  .toolbar-right {
+    flex: 1;
+    justify-content: flex-end;
+  }
+  .search {
+    flex: 1;
+  }
+  .search input {
+    width: 100%;
+    min-width: 120px;
+  }
+  .library-stats {
+    gap: 20px;
+    font-size: 9px;
+  }
+  .section-heading h2 {
+    font-size: 22px;
+  }
+  .settings-panel {
+    padding: 24px;
+  }
+  .emulator-panel {
+    align-items: flex-start;
+    gap: 20px;
+  }
+  .emulator-detail .row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .button-row .button {
+    font-size: 10px;
+  }
+  .empty-library {
+    min-height: 330px;
+  }
+  .cloud-location {
+    font-size: 9px;
+  }
+  .toast {
+    max-width: calc(100vw - 125px);
+  }
+}
+@media (max-width: 660px) {
+  main {
+    padding: 20px 17px 90px;
+  }
+  .topbar {
+    padding: 0 17px;
+  }
+  .library-stats {
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .library-stats > span:last-of-type {
+    display: none;
+  }
+  .two-columns {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .topbar .badge {
+    font-size: 9px;
+  }
+  .topbar-actions {
+    gap: 8px;
+  }
+  .header-divider {
+    display: none;
+  }
+  .breadcrumb {
+    font-size: 10px;
+    gap: 5px;
+  }
+  .empty-actions {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .section-heading .button {
+    font-size: 9px;
+    padding: 9px;
+  }
+  .section-heading h2 {
+    font-size: 20px;
+  }
+  .eyebrow {
+    font-size: 7px;
+  }
+  .page-heading h1 {
+    font-size: 28px;
+  }
+  .provider-copy {
+    min-width: 130px;
+  }
+  .provider-panel > .button {
+    margin-left: 0;
+  }
+  .provider-copy .row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .emulator-panel {
+    flex-direction: column;
+  }
+  .settings-heading {
+    flex-wrap: wrap;
+    gap: 0;
+    margin-bottom: 22px;
+  }
+  .settings-heading .page-heading {
+    margin-bottom: 17px;
+  }
+  .settings-heading > .button {
+    margin: 0;
+  }
+  .game-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 12px;
+  }
+  .game-grid.compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .generated-cover > strong {
+    font-size: 16px;
+  }
+  .upload-game > span {
+    display: none;
+  }
+  .operation-bar {
+    padding: 12px 17px;
+    gap: 10px;
+  }
+  .operation-bar > small {
+    font-size: 8px;
+  }
+  .modal {
+    padding: 22px;
+  }
+  .modal-backdrop {
+    padding: 15px;
+  }
+  .toast {
+    right: 17px;
+    font-size: 10px;
+  }
+  .sync-card code {
+    min-height: 0;
+  }
+}

@@ -1,0 +1,29 @@
+.profile-select {
+  width: 100%;
+  padding: 11px;
+  background: #0f1622;
+  border: 1px solid #2f3c52;
+  border-radius: 5px;
+  color: #b2c3df;
+  font-size: 11px;
+}
+.field.cloud-provider-select {
+  margin-bottom: 22px;
+  max-width: 480px;
+}
+.mega-sign-in {
+  margin: 22px 0;
+}
+.mega-sign-in > .button {
+  margin-top: 16px;
+}
+.mega-sign-in > .text-button {
+  margin-left: 20px;
+}
+select:focus-visible {
+  outline: 2px solid #87adff;
+  outline-offset: 4px;
+}
+.profile-readiness {
+  margin-top: 18px;
+}
