@@ -5,6 +5,21 @@ const path = require('node:path');
 (async () => {
   const root = path.resolve('test-results');
   await fs.mkdir(root, { recursive: true });
+  // CI runs smoke tests before packaging, so beforePack has not bundled Rclone yet.
+  const rclone = path.resolve(
+    'tools',
+    'bundled-rclone',
+    process.platform,
+    process.platform === 'win32' ? 'rclone.exe' : 'rclone',
+  );
+  try {
+    await fs.access(rclone);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    if (process.arch !== 'x64') throw new Error('Desktop smoke tests require Windows/Linux x64.');
+    console.log('Preparing official Rclone for desktop smoke tests…');
+    await require('./bundle-rclone.cjs')({ electronPlatformName: process.platform, arch: 1 });
+  }
   const desktop = await electron.launch({
     args: ['.'],
     env: { ...process.env, PS2_LAUNCHER_SMOKE: '1', VITE_DEV_SERVER_URL: '', RCLONE_BWLIMIT: '2M' },
@@ -199,6 +214,14 @@ const path = require('node:path');
     const settings = (await page.evaluate(() => window.launcher.snapshot())).settings;
     await fs.mkdir(path.dirname(settings.rcloneConfig), { recursive: true });
     await fs.writeFile(settings.rcloneConfig, `[test-dropbox]\ntype = alias\nremote = ${cloud}\n`);
+    const cloudStatus = (await page.evaluate(() => window.launcher.snapshot())).cloud;
+    expect(
+      cloudStatus,
+      'The local Rclone alias fixture must be available before scanning games.',
+    ).toMatchObject({
+      installed: true,
+      connected: true,
+    });
     await page.getByRole('button', { name: 'Refresh library', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Queued A', exact: true })).toBeVisible({
       timeout: 30000,

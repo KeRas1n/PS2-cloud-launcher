@@ -23,7 +23,7 @@ npm run test:integration # official downloads + real Rclone local-backend transf
 npm run dist             # native installers for the current operating system
 ```
 
-On headless Linux, run the smoke test through `xvfb-run --auto-servernum npm run test:smoke`. Install Electron's GTK, NSS and graphics dependencies. PCSX2 AppImage also needs the dependencies documented by [PCSX2 Linux troubleshooting](https://pcsx2.net/docs/troubleshooting/linux/). Packaging produces Windows NSIS and portable `.exe`, or Linux AppImage and `.deb`, in `release/`.
+On headless Linux, run the smoke test through `xvfb-run --auto-servernum npm run test:smoke`. Install Electron's GTK, NSS and graphics dependencies. Smoke tests prepare the official, checksum-verified Rclone binary when it is missing from `tools/bundled-rclone/`; the first run requires network access. PCSX2 AppImage also needs the dependencies documented by [PCSX2 Linux troubleshooting](https://pcsx2.net/docs/troubleshooting/linux/). Packaging produces Windows NSIS and portable `.exe`, or Linux AppImage and `.deb`, in `release/`.
 
 Integration tests are opt-in: they download official PCSX2 and Rclone binaries into unique `test-results/integration-*` directories. Their cloud fixture uses Rclone's real local alias backend, not a Dropbox account. Text `.iso` fixtures are not playable games. Tests never authorize an account or transfer personal data. Test screenshots and credentials are ignored by Git.
 
