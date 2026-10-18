@@ -1,3 +1,15 @@
+.profile-select {
+  width: 100%;
+  padding: 11px;
+  background: #0f1622;
+  border: 1px solid #2f3c52;
+  border-radius: 5px;
+  color: #b2c3df;
+  font-size: 11px;
+}
+.profile-readiness {
+  margin-top: 18px;
+}
 :root {
   font-family:
     Inter,

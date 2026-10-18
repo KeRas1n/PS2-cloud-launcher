@@ -20,7 +20,7 @@ export class RcloneService {
     private store: SettingsStore,
     private emit: (p: Progress) => void,
   ) {}
-  call(args: string[], progress = false, oauth = false) {
+  call(args: string[], progress: boolean | ((progress: Progress) => void) = false, oauth = false) {
     const s = this.store.value;
     return run(
       s.rclonePath,
@@ -40,7 +40,7 @@ export class RcloneService {
               try {
                 const data = JSON.parse(line);
                 if (data.stats)
-                  this.emit({
+                  (typeof progress === 'function' ? progress : this.emit)({
                     operation: 'sync',
                     message: 'Transferring files',
                     bytes: data.stats.bytes,

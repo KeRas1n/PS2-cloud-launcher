@@ -19,6 +19,9 @@ const devUrl =
     ? process.env.VITE_DEV_SERVER_URL
     : undefined;
 const rendererFile = path.resolve(__dirname, '../../dist/index.html');
+const smokeTest = !app.isPackaged && process.env.PS2_LAUNCHER_SMOKE === '1';
+if (smokeTest)
+  app.setPath('userData', path.join(app.getAppPath(), 'test-results', `desktop-data-${process.pid}`));
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => {
@@ -35,12 +38,11 @@ else {
 }
 
 async function start() {
-  const smokeTest = !app.isPackaged && process.env.PS2_LAUNCHER_SMOKE === '1';
-  if (smokeTest)
-    app.setPath('userData', path.join(app.getAppPath(), 'test-results', `desktop-data-${process.pid}`));
-  const launcherDir = app.isPackaged
-    ? path.dirname(process.env.APPIMAGE ?? process.env.PORTABLE_EXECUTABLE_FILE ?? app.getPath('exe'))
-    : app.getAppPath();
+  const launcherDir = smokeTest
+    ? path.join(app.getPath('userData'), 'launcher')
+    : app.isPackaged
+      ? path.dirname(process.env.APPIMAGE ?? process.env.PORTABLE_EXECUTABLE_FILE ?? app.getPath('exe'))
+      : app.getAppPath();
   const store = new SettingsStore(app.getPath('userData'), launcherDir);
   await store.load();
   const emit = (progress: Progress) => {
@@ -98,11 +100,10 @@ async function start() {
     });
     return result.canceled ? null : result.filePaths[0];
   }
-  handle('snapshot', async () => ({
-    settings: store.value,
-    emulator: await pcsx2.status(),
-    cloud: await rclone.status(),
-  }));
+  handle('snapshot', async () => {
+    const [emulator, cloud] = await Promise.all([pcsx2.status(), rclone.status()]);
+    return { settings: store.value, emulator: { ...emulator, running: pcsx2.running }, cloud };
+  });
   handle('settings:save', (input) =>
     exclusive(async () => {
       if (pcsx2.running) throw new Error('Close PCSX2 before changing paths.');
@@ -114,6 +115,10 @@ async function start() {
   handle('dialog:pick', (kind) => pick(z.enum(['directory', 'executable', 'bios', 'cover']).parse(kind)));
   handle('games:list', () => games.scan());
   handle('emulator:install', () => exclusive(() => pcsx2.install()));
+  handle('emulator:prepare', () => exclusive(() => pcsx2.prepare()));
+  handle('emulator:select-bios', (name) =>
+    exclusive(() => pcsx2.prepare(z.string().min(1).max(255).parse(name))),
+  );
   handle('emulator:open', (gameId) =>
     exclusive(async () => {
       const game = gameId === undefined ? undefined : games.get(id.parse(gameId));
@@ -126,10 +131,8 @@ async function start() {
       if (pcsx2.running) throw new Error('Close PCSX2 before importing BIOS.');
       const file = await pick('bios');
       if (!file) return 0;
-      await fs.mkdir(store.value.biosDirectory, { recursive: true });
-      const target = path.join(store.value.biosDirectory, path.basename(file));
-      // Never overwrite an existing BIOS silently.
-      await fs.copyFile(file, target, 1);
+      const name = await pcsx2.profiles.importBios(file);
+      if ((await pcsx2.status()).installed) await pcsx2.prepare(name);
       return 1;
     }),
   );

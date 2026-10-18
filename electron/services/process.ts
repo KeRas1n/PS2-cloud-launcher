@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 export interface RunOptions {
+  cwd?: string;
   timeout?: number;
   onLine?: (line: string) => void;
   maxOutput?: number;
@@ -7,7 +8,12 @@ export interface RunOptions {
 }
 export function run(binary: string, args: string[], options: RunOptions = {}): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(binary, args, {
+      cwd: options.cwd,
+      shell: false,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     let stdout = '',
       stderr = '',
       pending = '';

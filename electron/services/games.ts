@@ -81,7 +81,8 @@ export class GameService {
     this.games = new Map([...games.values()].map((g) => [g.id, g]));
     for (const game of this.games.values()) {
       const cover = path.join(this.store.userData, 'covers', `${game.id}.img`);
-      if (await exists(cover)) game.cover = `launcher-cover://cover/${game.id}`;
+      if (await exists(cover))
+        game.cover = `launcher-cover://cover/${game.id}?v=${(await fs.stat(cover)).mtimeMs}`;
     }
     return {
       games: [...this.games.values()].sort((a, b) => a.title.localeCompare(b.title)),

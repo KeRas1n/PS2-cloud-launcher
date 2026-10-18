@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-electron/
 release/
+release-*/
 emulator/
 tools/
 *.log
@@ -10,3 +11,8 @@ tools/
 !.env.example
 coverage/
 test-results/
+*.iso
+*.chd
+*.bin
+*.ps2
+*.p2s

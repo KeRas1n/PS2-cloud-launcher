@@ -20,7 +20,21 @@ const path = require('node:path');
     expect(await page.evaluate(() => typeof window.launcher.snapshot)).toBe('function');
     await page.screenshot({ path: path.join(root, 'games.png'), fullPage: true });
     await page.getByRole('navigation').getByRole('button', { name: 'Emulator' }).click();
-    await expect(page.getByRole('button', { name: 'Install PCSX2' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^(Install|Update) PCSX2$/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open PCSX2', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Prepare emulator', exact: true })).toBeVisible();
+    const invalidBios = path.join(root, 'invalid-bios.bin');
+    await fs.writeFile(invalidBios, 'Invalid BIOS fixture. No executable ROM data.');
+    await desktop.evaluate(({ dialog }, file) => {
+      globalThis.originalOpenDialog = dialog.showOpenDialog;
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+    }, invalidBios);
+    await page.getByRole('button', { name: 'Import BIOS', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('not a valid PS2 BIOS');
+    await page.getByRole('button', { name: 'Dismiss error' }).click();
+    await desktop.evaluate(({ dialog }) => {
+      dialog.showOpenDialog = globalThis.originalOpenDialog;
+    });
     await page.screenshot({ path: path.join(root, 'emulator.png'), fullPage: true });
     await page.getByRole('navigation').getByRole('button', { name: 'Cloud', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Cloud saves. More freedom.' })).toBeVisible();
@@ -49,16 +63,31 @@ const path = require('node:path');
     await expect(page.getByRole('heading', { name: 'Test Disc', exact: true })).toBeVisible({
       timeout: 30000,
     });
-    await page.getByRole('button', { name: 'Play', exact: true }).click();
-    await expect(page.getByRole('alert')).toContainText('Install PCSX2');
-    await page.getByRole('button', { name: 'Dismiss error' }).click();
+    await desktop.evaluate(({ dialog }, file) => {
+      globalThis.originalOpenDialog = dialog.showOpenDialog;
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+    }, path.resolve('assets/icon.png'));
+    await page.locator('.game-cover').hover();
+    await page.getByRole('button', { name: 'Import cover for Test Disc', exact: true }).click();
+    await expect(page.getByAltText('Test Disc cover')).toBeVisible({ timeout: 30000 });
+    await expect
+      .poll(() => page.getByAltText('Test Disc cover').evaluate((image) => image.naturalWidth))
+      .toBe(256);
+    await desktop.evaluate(({ dialog }) => {
+      dialog.showOpenDialog = globalThis.originalOpenDialog;
+    });
+    if (!(await page.evaluate(() => window.launcher.snapshot())).emulator.installed) {
+      await page.getByRole('button', { name: 'Play', exact: true }).click();
+      await expect(page.getByRole('alert')).toContainText('Install PCSX2');
+      await page.getByRole('button', { name: 'Dismiss error' }).click();
+    }
     await page.screenshot({ path: path.join(root, 'library-with-fixture.png'), fullPage: true });
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(780, 760));
     await page.screenshot({ path: path.join(root, 'responsive.png'), fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     expect(errors).toEqual([]);
     console.log(
-      'Electron smoke passed: secure preload, four pages, settings IPC, real filesystem scanning, launch error, responsive layout.',
+      'Electron smoke passed: secure preload, four pages, settings IPC, filesystem scanning, cover import/protocol, launch error, responsive layout.',
     );
   } finally {
     await desktop.close();

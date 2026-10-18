@@ -11,10 +11,13 @@ export async function exists(file: string): Promise<boolean> {
   }
 }
 export async function atomicJson(file: string, value: unknown) {
+  return atomicText(file, JSON.stringify(value, null, 2));
+}
+export async function atomicText(file: string, text: string) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const temp = `${file}.${randomUUID()}.tmp`;
   try {
-    await fs.writeFile(temp, JSON.stringify(value, null, 2), { mode: 0o600 });
+    await fs.writeFile(temp, text, { mode: 0o600 });
     await fs.rename(temp, file);
   } finally {
     await fs.rm(temp, { force: true });

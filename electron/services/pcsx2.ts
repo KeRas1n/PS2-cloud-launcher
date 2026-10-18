@@ -7,6 +7,8 @@ import { SettingsStore } from './settings';
 import { exists, atomicJson, walk } from './files';
 import { run } from './process';
 import { trustedFetch, download, extract } from './download';
+import { writeIni } from './ini';
+import { PCSX2ProfileService } from './profile';
 
 interface Install {
   path: string;
@@ -35,43 +37,25 @@ export function selectAsset(release: Release, platform: string, arch: string) {
   return candidates[0];
 }
 export function updateFolders(ini: string, folders: Record<string, string>): string {
-  const lines = ini.split(/\r?\n/);
-  let start = lines.findIndex((l) => l.trim().toLowerCase() === '[folders]');
-  if (start < 0) {
-    lines.push('', '[Folders]');
-    start = lines.length - 1;
-  }
-  let end = lines.findIndex((l, i) => i > start && /^\s*\[/.test(l));
-  if (end < 0) end = lines.length;
-  const section = lines.slice(start + 1, end).filter(
-    (l) =>
-      !Object.keys(folders).some(
-        (k) =>
-          l
-            .trim()
-            .toLowerCase()
-            .startsWith(k.toLowerCase() + ' =') ||
-          l
-            .trim()
-            .toLowerCase()
-            .startsWith(k.toLowerCase() + '='),
-      ),
+  return writeIni(
+    ini,
+    'Folders',
+    Object.fromEntries(Object.entries(folders).map(([key, value]) => [key, value.replace(/\\/g, '/')])),
   );
-  lines.splice(
-    start + 1,
-    end - start - 1,
-    ...section,
-    ...Object.entries(folders).map(([k, v]) => `${k} = ${v.replace(/\\/g, '/')}`),
-  );
-  return lines.join('\n');
+}
+export function gameLaunchArgs(dataDirectory: string, game: string, fullscreen: boolean) {
+  return ['-datapath', dataDirectory, '-nogui', fullscreen ? '-fullscreen' : '-nofullscreen', '--', game];
 }
 export class PCSX2Service {
   private child?: ChildProcess;
   private installing = false;
+  readonly profiles: PCSX2ProfileService;
   constructor(
     private store: SettingsStore,
     private emit: (p: Progress) => void,
-  ) {}
+  ) {
+    this.profiles = new PCSX2ProfileService(store);
+  }
   get running() {
     return !!this.child;
   }
@@ -113,10 +97,16 @@ export class PCSX2Service {
           version,
           running: this.running,
           managed: candidate === installed?.path,
+          profile: await this.profiles.inspect(candidate),
         };
       }
     }
-    return { installed: false, running: this.running, managed: false };
+    return {
+      installed: false,
+      running: this.running,
+      managed: false,
+      profile: await this.profiles.inspect(),
+    };
   }
   async install() {
     if (this.installing || this.running)
@@ -126,6 +116,8 @@ export class PCSX2Service {
     this.installing = true;
     const root = this.store.value.emulatorRoot;
     const staging = path.join(root, `.install-${randomUUID()}`);
+    let destination: string | undefined;
+    let published = false;
     try {
       this.emit({ operation: 'emulator', message: 'Checking latest stable PCSX2 release' });
       const release = (await (
@@ -137,24 +129,26 @@ export class PCSX2Service {
       await fs.mkdir(staging, { recursive: true });
       const archive = path.join(staging, path.basename(asset.name));
       await download(asset.browser_download_url, archive, 'emulator', this.emit, asset.digest);
-      const payload = path.join(staging, 'payload');
+      const versionDirectory = path.join(root, 'versions', `${release.tag_name}-${randomUUID()}`);
+      await fs.mkdir(path.dirname(versionDirectory), { recursive: true });
+      // Extract directly into a fresh version. Windows may deny renaming a directory
+      // containing newly extracted executables even after the extractor has exited.
+      await fs.mkdir(versionDirectory);
+      destination = versionDirectory;
       if (process.platform === 'linux') {
-        await fs.mkdir(payload);
-        await fs.rename(archive, path.join(payload, 'pcsx2.AppImage'));
-        await fs.chmod(path.join(payload, 'pcsx2.AppImage'), 0o755);
+        await fs.copyFile(archive, path.join(destination, 'pcsx2.AppImage'));
+        await fs.chmod(path.join(destination, 'pcsx2.AppImage'), 0o755);
       } else {
         this.emit({ operation: 'emulator', message: 'Extracting PCSX2' });
-        await extract(archive, payload);
+        await extract(archive, destination);
       }
-      const executable = (await walk(payload)).find(
+      const executable = (await walk(destination)).find(
         (f) => /(?:pcsx2.*\.exe|pcsx2\.AppImage)$/i.test(path.basename(f.path)) && !/uninstall/i.test(f.path),
       );
       if (!executable) throw new Error('PCSX2 executable missing from release.');
-      const destination = path.join(root, 'versions', `${release.tag_name}-${randomUUID().slice(0, 8)}`);
-      await fs.mkdir(path.dirname(destination), { recursive: true });
-      await fs.rename(payload, destination);
       const installed = { path: path.join(destination, executable.path), version: release.tag_name };
       await atomicJson(path.join(root, 'installed.json'), installed);
+      published = true;
       await this.store.save({ ...this.store.value, pcsx2Path: installed.path });
       this.emit({
         operation: 'emulator',
@@ -164,46 +158,46 @@ export class PCSX2Service {
       return this.status();
     } finally {
       this.installing = false;
-      await fs.rm(staging, { recursive: true, force: true });
+      // Cleanup must not turn a successful install into an error or hide the
+      // original extraction failure. Only directories created by this attempt
+      // are eligible; existing versions and persistent data are never removed.
+      for (const directory of [staging, ...(!published && destination ? [destination] : [])]) {
+        try {
+          await fs.rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+        } catch {
+          // A locked temporary directory can remain safely; retries use a new UUID.
+        }
+      }
     }
   }
+  async prepare(selectedBios?: string) {
+    if (this.running || this.installing) throw new Error('Close PCSX2 before changing its profile.');
+    const status = await this.status();
+    if (!status.path) throw new Error('Install PCSX2 or select its executable in Settings.');
+    await this.profiles.prepare(status.path, false, selectedBios);
+  }
   async launch(game?: string) {
+    // Retain compatibility with older renderer code without opening emulator UI.
+    if (!game) return this.prepare();
     if (this.running || this.installing) throw new Error('PCSX2 is already running or being installed.');
     const status = await this.status();
     if (!status.path) throw new Error('Install PCSX2 or select its executable in Settings.');
+    if (!(await exists(game))) throw new Error('Game file is missing. Refresh the library.');
+    await this.profiles.prepare(status.path, true);
     const s = this.store.value;
-    for (const dir of [
-      s.dataDirectory,
-      s.biosDirectory,
-      s.memcardsDirectory,
-      s.saveStatesDirectory,
-      path.join(s.dataDirectory, 'inis'),
-    ])
-      await fs.mkdir(dir, { recursive: true });
-    const iniFile = path.join(s.dataDirectory, 'inis', 'PCSX2.ini');
-    const ini = (await exists(iniFile)) ? await fs.readFile(iniFile, 'utf8') : '';
-    if (ini) await fs.copyFile(iniFile, `${iniFile}.launcher-backup`);
-    await fs.writeFile(
-      iniFile,
-      updateFolders(ini, {
-        Bios: s.biosDirectory,
-        MemoryCards: s.memcardsDirectory,
-        Savestates: s.saveStatesDirectory,
-      }),
-    );
-    const args = [
-      '-datapath',
-      s.dataDirectory,
-      ...(game ? ['-batch', ...(s.fullscreen ? ['-fullscreen'] : []), '--', game] : []),
-    ];
+    const args = gameLaunchArgs(s.dataDirectory, game, s.fullscreen);
     await new Promise<void>((resolve, reject) => {
       const child = spawn(status.path!, args, {
         cwd: path.dirname(status.path!),
         shell: false,
+        windowsHide: true,
         stdio: 'ignore',
       });
       this.child = child;
-      child.once('spawn', resolve);
+      child.once('spawn', () => {
+        this.emit({ operation: 'emulator', message: 'PCSX2 started', emulatorRunning: true });
+        resolve();
+      });
       child.once('error', (error) => {
         this.child = undefined;
         reject(error);
@@ -212,6 +206,7 @@ export class PCSX2Service {
         this.child = undefined;
         this.emit({
           operation: 'emulator',
+          emulatorRunning: false,
           message: code
             ? `PCSX2 exited with code ${code}. Check BIOS and system dependencies.`
             : 'PCSX2 closed',

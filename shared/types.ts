@@ -25,11 +25,24 @@ export interface Game {
   cover?: string;
 }
 export interface EmulatorStatus {
+  profile?: EmulatorProfile;
   installed: boolean;
   path?: string;
   version?: string;
   running: boolean;
   managed: boolean;
+}
+export interface BiosImage {
+  name: string;
+  version: string;
+  region: string;
+}
+export interface EmulatorProfile {
+  directory: string;
+  prepared: boolean;
+  ready: boolean;
+  bios: BiosImage[];
+  selectedBios?: string;
 }
 export interface CloudStatus {
   installed: boolean;
@@ -71,6 +84,7 @@ export interface Progress {
   bytes?: number;
   totalBytes?: number;
   speed?: number;
+  emulatorRunning?: boolean;
 }
 export interface Snapshot {
   settings: Settings;
@@ -83,6 +97,8 @@ export interface LauncherAPI {
   pick(kind: 'directory' | 'executable' | 'bios' | 'cover'): Promise<string | null>;
   library(): Promise<Library>;
   installEmulator(): Promise<EmulatorStatus>;
+  prepareEmulator(): Promise<void>;
+  selectBios(name: string): Promise<void>;
   openEmulator(gameId?: string): Promise<void>;
   importBios(): Promise<number>;
   setCover(gameId: string): Promise<void>;

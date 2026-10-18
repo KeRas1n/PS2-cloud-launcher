@@ -28,7 +28,7 @@ Integration tests are opt-in: they download official PCSX2 and Rclone binaries i
 ## First launch
 
 1. **Emulator:** select **Install PCSX2**. The launcher resolves the latest non-prerelease from `PCSX2/pcsx2` on GitHub and selects the Windows portable archive or Linux AppImage. Automatic installation requires x86-64. You may select an existing executable in Settings instead.
-2. Import a BIOS dumped from your own console. Open PCSX2, finish its setup wizard, select that BIOS and configure controllers and graphics. The launcher never provides BIOS or game downloads.
+2. Import an uncompressed BIOS dumped from your own console in **Emulator**. Its ROM directory is checked before importing, and the launcher selects it automatically. Choose another imported BIOS from the launcher dropdown if needed. The launcher never provides BIOS or game downloads. **Prepare emulator** can create a profile in advance; game launch also prepares it automatically. No PCSX2 setup wizard is needed.
 3. **Settings:** add folders containing your own `.iso` and `.chd` images. Save preferences. Scanning is recursive, skips hidden entries and symbolic links, and includes the game download directory automatically.
 4. **Cloud:** install Rclone with the supplied button, or choose an existing executable. Click **Connect Dropbox** and authorize Rclone in your browser. Rclone uses its built-in Dropbox OAuth client; you supply your own account, without developer API keys or a hosted service.
 5. Use game-card actions for disc images, and the four manual save buttons for memory cards and save states. Every transfer gets a review dialog before it begins.
@@ -43,16 +43,18 @@ emulator/
   versions/<release>-<unique-id>/  # replaceable official binaries
   data/                          # persistent PCSX2 portable-style data
     bios/
-    inis/PCSX2.ini
     memcards/
     sstates/
+    PCSX2/inis/PCSX2.ini          # actual PCSX2 2.x profile for -datapath data/
 ```
 
 Updates stage and extract a new version, then switch the managed executable. They do not merge release files into your existing data or remove old versions. Previous versions remain available for rollback by selecting their executable in Settings. GitHub asset SHA-256 digests are verified when supplied; Rclone downloads always verify the official release SHA-256 checksum. Downloads use an HTTPS host allowlist.
 
-PCSX2 starts with [`-datapath <directory>`](https://pcsx2.net/docs/advanced/cli/), preserving PCSX2's portable folder structure without tying data to a versioned executable. For an existing portable installation, select its executable and its portable data root, plus existing BIOS, memory-card and state directories. For a conventional installation, select its current PCSX2 data directory. Changing paths does **not** move files automatically.
+PCSX2 starts with [`-datapath <parent>`](https://pcsx2.net/docs/advanced/cli/). PCSX2 2.8.2 appends `PCSX2/` to that parent, so the actual profile is `<parent>/PCSX2/inis/PCSX2.ini`. The Emulator page displays the actual profile path. For an existing conventional profile named `PCSX2`, select its parent in Settings, plus existing BIOS, memory-card and state directories. An external `portable.txt`/`portable.ini` overrides `-datapath`; existing initialized portable profiles are supported, while a fresh external portable profile should be replaced with a managed installation for automatic initialization. Changing paths does **not** move files automatically.
 
-On launch, the launcher updates only `Bios`, `MemoryCards`, and `Savestates` in the `[Folders]` section of `inis/PCSX2.ini` to match Settings. Other INI values remain intact; the previous INI is copied to `PCSX2.ini.launcher-backup`. Do not leave another PCSX2 instance open while changing these paths or synchronizing. The launcher blocks save transfers while its own PCSX2 child is running; independently started PCSX2 processes cannot be reliably detected across all environments.
+The launcher obtains hardware-appropriate defaults through PCSX2's `-testconfig` mode in an isolated fresh profile, then caches them per executable. This mode exits before constructing the wizard or main window. Missing defaults are merged into the real profile, existing controller/graphics settings are retained, and the original INI gets a unique `PCSX2.ini.launcher-backup-*` before a change. The launcher sets the real folder paths, marks setup complete, disables automatic update/shutdown prompts and consoles, and selects a structurally valid imported BIOS. Games start with `-nogui` and the configured fullscreen flag; only the game display is shown during normal play. Fresh profiles include PCSX2's default keyboard controls. Invalid/missing BIOS and missing disc files are reported in the launcher before spawning gameplay. Upstream PCSX2 may still display native fatal error dialogs for hardware, driver, or corrupt-disc failures; stock CLI does not suppress every native error dialog.
+
+If older launcher versions let the wizard populate `<parent>/PCSX2/memcards`, `sstates`, or `bios` while the configured default folders remained empty, preparation preserves those populated directories by selecting their paths. Files are not moved or removed. Custom or populated configured save folders are not replaced. Do not leave another PCSX2 instance open while changing profiles or synchronizing. The launcher blocks transfers while its own PCSX2 child runs; independently started processes cannot be reliably detected everywhere.
 
 PCSX2 detection checks the configured path, managed manifest, PATH, Windows `Program Files/PCSX2`, and Linux `/usr/bin/pcsx2`. Choose other installations manually. Flatpak launch wrappers are not automatically managed. External installations report `-version` where supported. Updating an external installation creates a managed copy; it does not overwrite that external installation.
 
@@ -108,7 +110,7 @@ The renderer has no Node.js integration. Context isolation, sandboxing, CSP, sen
 
 ## Releases
 
-GitHub Actions tests and builds Windows and Linux on native runners. A `v*` tag creates a **draft** GitHub release with Windows installers and Linux packages after both builds pass. No signing certificate is configured; configure signing before distributing production releases. Normal pushes and pull requests upload build artifacts without publishing a release.
+GitHub Actions tests and builds Windows and Linux on native runners. Tags and manual workflow runs also execute official-binary and real Rclone integration tests on both platforms. A `v*` tag creates a **draft** GitHub release with Windows installers and Linux packages after both builds pass. No signing certificate is configured; configure signing before distributing production releases. Normal pushes and pull requests upload build artifacts without publishing a release.
 
 The launcher requires a real Dropbox authorization for end-to-end Dropbox verification and your own BIOS/disc for gameplay testing. The repository does not contain either. No automatic background save sync, deletion mirroring, automatic artwork downloads or paid backend is included.
 
@@ -117,8 +119,9 @@ The launcher requires a real Dropbox authorization for end-to-end Dropbox verifi
 - **GitHub release rate limit:** retry later; anonymous GitHub API limits apply. No GitHub credentials are required.
 - **Rclone not found:** install through Cloud, ensure `rclone` is on PATH, or select its absolute executable path.
 - **Cloud disconnected:** check the remote/config path, reconnect, and review the reported error. Account quotas and Dropbox permissions still apply.
-- **PCSX2 does not launch:** open it directly to diagnose hardware/system dependencies, import/select a valid BIOS, and check paths. On Windows, PCSX2 may need the current Visual C++ runtime; see [official setup](https://pcsx2.net/docs/setup/).
+- **PCSX2 does not launch:** import/select a valid uncompressed BIOS in Emulator, check paths, and review the PCSX2 `logs/emulog.txt` in the displayed profile directory. On Windows, PCSX2 may need the current Visual C++ runtime; see [official setup](https://pcsx2.net/docs/setup/).
 - **Existing save not visible:** point Settings at its actual directory and close/reopen PCSX2. An imported external install is not automatically migrated.
 - **Invalid preferences file:** repair or rename `settings.json` in Electron user data. Invalid files are not silently overwritten.
+- **Windows packaging fails renaming the extracted runtime:** retry with the installed runtime: `npx electron-builder --win --x64 --publish never --config.electronDist=node_modules/electron/dist`. Use a fresh output directory if a previous unpacked application is still running.
 
 MIT license applies to launcher code. PCSX2, Rclone and 7-Zip retain their own licenses; packaging retains dependency license files. This project is not affiliated with Sony, Dropbox, PCSX2 or Rclone.

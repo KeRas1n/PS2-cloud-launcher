@@ -1,13 +1,12 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { SettingsStore } from '../electron/services/settings';
 import { safeRelative, within, walk } from '../electron/services/files';
-import { selectAsset, updateFolders } from '../electron/services/pcsx2';
+import { PCSX2Service, selectAsset, updateFolders } from '../electron/services/pcsx2';
 import { fingerprint, makeFiles, SyncService } from '../electron/services/sync';
 import { GameService } from '../electron/services/games';
 import type { RcloneService } from '../electron/services/rclone';
-import type { PCSX2Service } from '../electron/services/pcsx2';
 
 const temporary: string[] = [];
 async function temp() {
@@ -17,6 +16,7 @@ async function temp() {
   return root;
 }
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const root of temporary.splice(0)) await fs.rm(root, { recursive: true, force: true });
 });
 const entry = (name: string, modified = '2026-01-01', size = 1) => ({ path: name, modified, size });
@@ -93,6 +93,34 @@ describe('PCSX2 release and data handling', () => {
     expect(next).not.toContain('= old');
     expect(next).toContain('MemoryCards = D:/PS2/memcards');
     expect(updateFolders(next, { MemoryCards: 'D:/new' }).match(/MemoryCards =/g)).toHaveLength(1);
+  });
+  it('reports process start and exit so emulator controls do not remain disabled', async () => {
+    const root = await temp(),
+      store = new SettingsStore(path.join(root, 'user'), root);
+    await store.load();
+    await store.save({ ...store.value, pcsx2Path: process.execPath });
+    const states: boolean[] = [];
+    let resolveExit!: () => void;
+    const exited = new Promise<void>((resolve) => {
+      resolveExit = resolve;
+    });
+    const service = new PCSX2Service(store, (progress) => {
+      if (progress.emulatorRunning !== undefined) states.push(progress.emulatorRunning);
+      if (progress.emulatorRunning === false) resolveExit();
+    });
+    vi.spyOn(service.profiles, 'prepare').mockResolvedValue({
+      directory: root,
+      prepared: true,
+      ready: true,
+      bios: [],
+    });
+    const game = path.join(root, 'process-fixture.iso');
+    await fs.writeFile(game, 'process lifecycle fixture, not a game');
+    // Node is a short-lived process fixture: it exits when given PCSX2 arguments.
+    await service.launch(game);
+    await exited;
+    expect(states).toEqual([true, false]);
+    expect(service.running).toBe(false);
   });
 });
 describe('game discovery', () => {

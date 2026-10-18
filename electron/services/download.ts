@@ -1,8 +1,9 @@
-import { createWriteStream, promises as fs } from 'node:fs';
+import { createWriteStream, promises as fs, constants } from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import os from 'node:os';
 import { path7za } from '7zip-bin';
 import type { Progress } from '../../shared/types';
 import { run } from './process';
@@ -74,9 +75,25 @@ export async function download(
   }
 }
 export async function extract(archive: string, target: string) {
-  const binary = path7za.replace('app.asar', 'app.asar.unpacked');
-  if (process.platform !== 'win32') await fs.chmod(binary, 0o755);
-  await fs.mkdir(target, { recursive: true });
-  // Release archives are downloaded only from allowlisted official hosts.
-  await run(binary, ['x', archive, `-o${target}`, '-y'], { timeout: 300_000 });
+  let binary = path7za.replace('app.asar', 'app.asar.unpacked');
+  let executableCopy: string | undefined;
+  try {
+    if (process.platform !== 'win32') {
+      try {
+        await fs.access(binary, constants.X_OK);
+      } catch {
+        // AppImages mount read-only. Never chmod a bundled tool in place.
+        executableCopy = await fs.mkdtemp(path.join(os.tmpdir(), 'ps2-cloud-extract-'));
+        const copy = path.join(executableCopy, '7za');
+        await fs.copyFile(binary, copy);
+        await fs.chmod(copy, 0o700);
+        binary = copy;
+      }
+    }
+    await fs.mkdir(target, { recursive: true });
+    // Release archives are downloaded only from allowlisted official hosts.
+    await run(binary, ['x', archive, `-o${target}`, '-y'], { timeout: 300_000 });
+  } finally {
+    if (executableCopy) await fs.rm(executableCopy, { recursive: true, force: true });
+  }
 }

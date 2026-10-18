@@ -184,7 +184,7 @@ export class SyncService {
           message: `${index + 1}/${source.length}: ${file.path}`,
           bytes: completed,
           totalBytes: plan.bytes,
-          percent: (completed / plan.bytes) * 100,
+          percent: plan.bytes ? (completed / plan.bytes) * 100 : undefined,
         });
         // copyto never propagates deletions. Rclone moves replaced destinations into backup-dir before writing.
         await this.rclone.call(
@@ -200,7 +200,16 @@ export class SyncService {
             '--low-level-retries',
             '5',
           ],
-          true,
+          (progress) => {
+            const bytes = Math.min(plan.bytes, completed + (progress.bytes ?? 0));
+            this.emit({
+              ...progress,
+              message: `${index + 1}/${source.length}: ${file.path}`,
+              bytes,
+              totalBytes: plan.bytes,
+              percent: plan.bytes ? (bytes / plan.bytes) * 100 : undefined,
+            });
+          },
         );
         completed += file.size;
       }

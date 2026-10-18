@@ -95,7 +95,16 @@ export default function App() {
     if (scan) setLibrary(await api.library());
   }
   useEffect(() => {
-    const unsubscribe = api?.onProgress(setProgress);
+    const unsubscribe = api?.onProgress((progress) => {
+      setProgress(progress);
+      if (progress.emulatorRunning !== undefined) {
+        setSnapshot((current) =>
+          current
+            ? { ...current, emulator: { ...current.emulator, running: progress.emulatorRunning! } }
+            : current,
+        );
+      }
+    });
     if (api)
       refresh()
         .catch((e) => setError(String(e.message)))
@@ -247,6 +256,7 @@ export default function App() {
           {navigation.map(({ name, icon: Icon }) => (
             <button
               key={name}
+              aria-label={name}
               className={`nav-item ${page === name ? 'active' : ''}`}
               onClick={() => setPage(name)}
             >
@@ -274,7 +284,7 @@ export default function App() {
             Always your own.
           </p>
           <div className="build-info">
-            <span className="tiny-dot" /> LOCAL FIRST <span>v0.1.0</span>
+            <span className="tiny-dot" /> LOCAL FIRST <span>v0.1.2</span>
           </div>
         </div>
       </aside>
@@ -528,10 +538,15 @@ export default function App() {
                       secondary
                       disabled={disabled || !emulator?.installed || emulator?.running}
                       onClick={() =>
-                        void act('Starting PCSX2', () => api!.openEmulator(), 'PCSX2 launched', false)
+                        void act(
+                          'Preparing emulator',
+                          () => api!.prepareEmulator(),
+                          'Emulator profile prepared. Import your own BIOS before playing.',
+                          false,
+                        )
                       }
                     >
-                      <ExternalLink size={16} /> Open PCSX2
+                      <ShieldCheck size={16} /> Prepare emulator
                     </Button>
                   </div>
                 </div>
@@ -543,8 +558,8 @@ export default function App() {
                   </div>
                   <h3>Bring your own BIOS</h3>
                   <p>
-                    Import a BIOS dumped from your own PlayStation 2. Select it in the PCSX2 setup wizard
-                    before your first game.
+                    Import an uncompressed BIOS dumped from your own PlayStation 2. The launcher validates and
+                    selects it here. No emulator setup wizard is needed.
                   </p>
                   <Button
                     secondary
@@ -554,7 +569,7 @@ export default function App() {
                         'Importing BIOS',
                         async () => {
                           const count = await api!.importBios();
-                          if (count) setNotice('BIOS imported. Select it in PCSX2.');
+                          if (count) setNotice('BIOS imported. The launcher selects it automatically.');
                         },
                         undefined,
                         false,
@@ -563,6 +578,39 @@ export default function App() {
                   >
                     <Plus size={16} /> Import BIOS
                   </Button>
+                  {!!emulator?.profile?.bios.length && (
+                    <label className="field">
+                      <span>Selected BIOS</span>
+                      <select
+                        className="profile-select"
+                        value={emulator.profile.selectedBios ?? ''}
+                        disabled={disabled || emulator.running || !emulator.installed}
+                        onChange={(event) =>
+                          void act(
+                            'Selecting BIOS',
+                            () => api!.selectBios(event.target.value),
+                            'BIOS selected',
+                            false,
+                          )
+                        }
+                      >
+                        {emulator.profile.bios.map((image) => (
+                          <option key={image.name} value={image.name}>
+                            {image.name} · {image.region} {image.version}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  <div className="profile-readiness">
+                    <Badge good={!!emulator?.profile?.ready}>
+                      {emulator?.profile?.ready
+                        ? 'Ready to play'
+                        : emulator?.profile?.bios.length
+                          ? 'Prepared automatically on first launch'
+                          : 'Import a valid BIOS to play'}
+                    </Badge>
+                  </div>
                 </section>
                 <section className="panel">
                   <div className="panel-symbol">
@@ -573,9 +621,23 @@ export default function App() {
                     Updates install into versioned folders. BIOS, settings, memory cards, and save states stay
                     in your persistent data directory.
                   </p>
-                  <code>{snapshot?.settings.dataDirectory ?? 'Loading data directory…'}</code>
+                  <code>
+                    {emulator?.profile?.directory ??
+                      snapshot?.settings.dataDirectory ??
+                      'Loading data directory…'}
+                  </code>
                 </section>
               </div>
+              <section className="panel info-strip">
+                <div>
+                  <strong>Only your game window opens.</strong>
+                  <p>
+                    PCSX2 defaults are prepared automatically. The setup wizard, library, update prompts, and
+                    shutdown confirmation are disabled. Fresh profiles include keyboard controls; existing
+                    controller bindings are preserved.
+                  </p>
+                </div>
+              </section>
               <section className="panel info-strip">
                 <span>
                   <strong>Already have PCSX2?</strong>
@@ -587,7 +649,7 @@ export default function App() {
                 </button>
               </section>
               <button className="text-button muted" onClick={() => void api?.openLink('pcsx2')}>
-                PCSX2 setup documentation <ExternalLink size={14} />
+                PCSX2 documentation <ExternalLink size={14} />
               </button>
             </>
           )}
@@ -823,7 +885,10 @@ export default function App() {
                   <MonitorDown size={20} />
                   <div>
                     <h3>PCSX2 & local data</h3>
-                    <p>Paths must be absolute. PCSX2 uses this data directory through -datapath.</p>
+                    <p>
+                      Paths must be absolute. PCSX2 stores its profile in the PCSX2 subfolder of this data
+                      parent.
+                    </p>
                   </div>
                 </div>
                 {settingField(
@@ -839,9 +904,9 @@ export default function App() {
                   'directory',
                 )}
                 {settingField(
-                  'PCSX2 data directory',
+                  'PCSX2 data parent directory',
                   'dataDirectory',
-                  'Use your existing portable folder to preserve settings. Other configured folders below remain independent.',
+                  'PCSX2 creates a PCSX2 subfolder here. Existing settings and save folders are preserved; folders below remain independent.',
                   'directory',
                 )}
                 <div className="field-grid">
