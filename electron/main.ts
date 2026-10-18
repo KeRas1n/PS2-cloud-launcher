@@ -4,6 +4,8 @@ import { registerCoverProtocol } from './covers';
 import { registerIpc } from './ipc/register';
 import { createRuntime } from './runtime';
 import { createLauncherWindow, type WindowReference } from './window';
+import { createIpcHandler } from './ipc/handle';
+import { LauncherUpdateService } from './services/launcher-update';
 protocol.registerSchemesAsPrivileged([
   { scheme: 'launcher-cover', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
@@ -45,6 +47,7 @@ async function start() {
   const { transfers } = runtime;
   let quitting = false;
   app.on('before-quit', (event) => {
+    if (runtime.installingUpdate) return;
     if (quitting) return;
     event.preventDefault();
     quitting = true;
@@ -52,7 +55,33 @@ async function start() {
   });
 
   const createWindow = () => createLauncherWindow(windows, runtime, { smokeTest, devUrl, rendererFile });
+  let updates: LauncherUpdateService | undefined;
+  // NSIS and AppImage support in-place updates. Portable EXE/deb stay manual.
+  if (
+    app.isPackaged &&
+    ((process.platform === 'win32' && !process.env.PORTABLE_EXECUTABLE_FILE) ||
+      (process.platform === 'linux' && process.env.APPIMAGE))
+  ) {
+    const { autoUpdater } = await import('electron-updater');
+    updates = new LauncherUpdateService(
+      autoUpdater,
+      (state) => {
+        if (windows.current && !windows.current.isDestroyed())
+          windows.current.webContents.send('launcher-update', state);
+      },
+      () => runtime.assertUpdateIdle(),
+      (action) => runtime.installLauncherUpdate(action),
+    );
+    autoUpdater.on('error', () => runtime.updateInstallationFailed());
+  }
+  const handle = createIpcHandler(windows, devUrl, rendererFile);
+  handle('launcher-update:state', () => updates?.state ?? { status: 'idle' });
+  handle('launcher-update:confirm', () =>
+    runtime.request('launcher-update:confirm', () => updates?.confirm()),
+  );
+  handle('launcher-update:later', () => updates?.later());
   createWindow();
+  void updates?.check();
   app.on('activate', () => {
     if (!windows.current) createWindow();
   });

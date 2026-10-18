@@ -1,6 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { LauncherAPI, Progress } from '../shared/types';
 const api: LauncherAPI = {
+  launcherUpdate: () => ipcRenderer.invoke('launcher-update:state'),
+  confirmLauncherUpdate: () => ipcRenderer.invoke('launcher-update:confirm'),
+  deferLauncherUpdate: () => ipcRenderer.invoke('launcher-update:later'),
+  onLauncherUpdate: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) =>
+      callback(state);
+    ipcRenderer.on('launcher-update', listener);
+    return () => ipcRenderer.removeListener('launcher-update', listener);
+  },
   snapshot: () => ipcRenderer.invoke('snapshot'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   resetLauncher: (confirmed) => ipcRenderer.invoke('settings:reset', confirmed),

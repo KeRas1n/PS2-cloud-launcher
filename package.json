@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "7zip-bin": "^5.2.0",
+    "electron-updater": "^6.8.9",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -49,6 +50,7 @@
   "build": {
     "appId": "io.ps2cloud.launcher",
     "productName": "PS2 Cloud Launcher",
+    "artifactName": "${name}-${version}-${arch}.${ext}",
     "beforePack": "scripts/bundle-rclone.cjs",
     "directories": {
       "output": "release"
@@ -104,8 +106,18 @@
       "icon": "assets/icon.png"
     },
     "nsis": {
+      "artifactName": "${name}-Setup-${version}-${arch}.${ext}",
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "KeRas1n",
+        "repo": "PS2-cloud-launcher"
+      }
+    ]
   }
 }

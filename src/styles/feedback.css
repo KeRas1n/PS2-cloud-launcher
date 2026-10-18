@@ -129,6 +129,16 @@
 .toast > svg {
   flex-shrink: 0;
 }
+.update-toast {
+  top: auto;
+  bottom: 90px;
+  max-width: min(480px, calc(100vw - 56px));
+}
+.update-toast > button {
+  padding: 6px 8px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+}
 .toast > button {
   margin-left: 10px;
 }

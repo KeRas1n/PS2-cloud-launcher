@@ -27,6 +27,40 @@ On headless Linux, run the smoke test through `xvfb-run --auto-servernum npm run
 
 Integration tests are opt-in: they download official PCSX2 and Rclone binaries into unique `test-results/integration-*` directories. Their cloud fixture uses Rclone's real local alias backend, not a Dropbox account. Text `.iso` fixtures are not playable games. Tests never authorize an account or transfer personal data. Test screenshots and credentials are ignored by Git.
 
+## Launcher updates
+
+Installed Windows NSIS builds and Linux AppImages silently check the public
+[`KeRas1n/PS2-cloud-launcher` GitHub Releases](https://github.com/KeRas1n/PS2-cloud-launcher/releases)
+once at startup. A small notification offers **Update** or **Later**. **Update**
+downloads the release and restarts the launcher to install it. **Later** dismisses
+the offer for this session. No download happens before confirmation, and ordinary
+exit never installs a cached update. Offline checks and missing releases stay silent.
+
+Close PCSX2 and finish or cancel all queued/running transfers before updating.
+If gameplay or another operation starts during download, installation waits for
+another **Update** click after that activity finishes. Automatically launched PCSX2
+and launcher operations are tracked; independently launched PCSX2 is not detectable
+reliably, so close it yourself first. Windows portable EXE and Linux deb packages
+remain manual updates; use NSIS or AppImage for automatic updates.
+
+Launcher updates retain settings, credentials, PCSX2 binaries/profile, BIOS, games,
+saves, and external paths. Windows update installation overlays application files
+without recursively deleting the installation folder, preserving legacy adjacent
+`emulator/` data. Bundled Rclone is refreshed with the application; its user config
+and custom installations remain in place. Install the first updater-enabled NSIS
+build before relying on this behavior; older uninstallers do not have this safeguard.
+
+To release: keep `build.appId` and package `name` stable, bump `package.json`'s
+version, commit the updated package and lockfile, and push a matching `vX.Y.Z` tag.
+Existing CI builds both platforms and creates a draft GitHub Release containing
+installers, `latest.yml`, `latest-linux.yml`, and `.blockmap` files. Publish that
+draft when both platform assets are ready. Drafts/prereleases are not offered.
+The repository must exist and be public; no GitHub token is embedded in the app.
+For a manual build, use `npm run dist -- --publish never` and upload the same files
+from `release/`. Initial end-to-end verification needs two published versions:
+install the older updater-enabled build, then publish a higher version and verify
+**Later**, confirmed update/restart, and retained data on Windows and Linux.
+
 ## First launch
 
 1. **Emulator:** select **Install PCSX2**. The launcher resolves the latest non-prerelease from `PCSX2/pcsx2` on GitHub and selects the Windows portable archive or Linux AppImage. Automatic installation requires x86-64. You may select an existing executable in Settings instead.

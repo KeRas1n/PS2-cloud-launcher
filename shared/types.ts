@@ -128,7 +128,17 @@ export interface Snapshot {
   emulator: EmulatorStatus;
   cloud: CloudStatus;
 }
+export interface LauncherUpdate {
+  status: 'idle' | 'available' | 'downloading' | 'ready';
+  version?: string;
+  hidden?: boolean;
+  error?: string;
+}
 export interface LauncherAPI {
+  launcherUpdate(): Promise<LauncherUpdate>;
+  confirmLauncherUpdate(): Promise<void>;
+  deferLauncherUpdate(): Promise<void>;
+  onLauncherUpdate(callback: (state: LauncherUpdate) => void): () => void;
   snapshot(): Promise<Snapshot>;
   saveSettings(settings: Settings): Promise<Settings>;
   resetLauncher(confirmed: boolean): Promise<void>;

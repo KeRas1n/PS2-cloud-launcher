@@ -77,6 +77,7 @@ export async function createRuntime(launcherDir: string, windows: WindowReferenc
   let modifying = false;
   let resetting = false;
   let requests = 0;
+  let installingUpdate = false;
   const transfers = new TransferQueue(
     (items) => {
       if (windows.current && !windows.current.isDestroyed())
@@ -159,10 +160,39 @@ export async function createRuntime(launcherDir: string, windows: WindowReferenc
     exclusive,
     enqueueTransfer,
     session,
+    get installingUpdate() {
+      return installingUpdate;
+    },
+    updateInstallationFailed() {
+      installingUpdate = false;
+    },
+    assertUpdateIdle() {
+      if (
+        pcsx2.running ||
+        transfers.active ||
+        modifying ||
+        sync.busy ||
+        autoSync.busy ||
+        resetting ||
+        requests > 1
+      )
+        throw new Error('Close PCSX2 and wait for all transfers and operations before updating.');
+    },
+    installLauncherUpdate(action: () => void) {
+      this.assertUpdateIdle();
+      installingUpdate = true;
+      try {
+        action();
+      } catch (error) {
+        installingUpdate = false;
+        throw error;
+      }
+    },
     get resetting() {
       return resetting;
     },
     async request<T>(channel: string, action: () => Promise<T> | T): Promise<T> {
+      if (installingUpdate) throw new Error('Launcher update is installing.');
       if (resetting) throw new Error('Launcher data is being reset. Please wait.');
       if (channel === 'settings:reset' && requests)
         throw new Error('Wait for the current operation to finish before resetting launcher data.');
