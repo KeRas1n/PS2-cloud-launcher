@@ -18,6 +18,9 @@ the renderer calls only the typed preload bridge in `shared/types.ts`.
   Snapshot refreshes update untouched fields while retaining unsaved edits. Saving
   accepts the normalized settings returned by Electron. Provider-specific paths
   follow the newly selected provider.
+  The Reset data tab uses an explicit confirmation and reloads the renderer after
+  reset. `electron/services/reset.ts` validates an allowlist of launcher metadata
+  paths against protected games, saves, BIOS, emulator and backup locations.
 - `src/features/transfers`: queue subscription, downloads screen and sync preview.
   `useTransfers` runs in the provider, even when Downloads is not visible. Terminal
   transfers refresh the library once per transfer ID.
@@ -54,6 +57,7 @@ npm test
 npm run build
 npm run test:smoke
 npm run test:game-deletion
+npm run test:reset
 ```
 
 Smoke tests use an isolated Electron profile, generated fixtures and a local Rclone

@@ -20,6 +20,7 @@
     "test:cloud": "node scripts/verify-cloud.cjs",
     "test:transfers": "node scripts/verify-transfers.cjs",
     "test:game-deletion": "node scripts/verify-game-deletion.cjs",
+    "test:reset": "node scripts/verify-reset.cjs",
     "benchmark:mega": "node scripts/benchmark-mega.cjs"
   },
   "dependencies": {

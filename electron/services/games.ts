@@ -10,6 +10,10 @@ import { isGame, gameTitle } from '../../shared/game-formats';
 export { isGame } from '../../shared/game-formats';
 export const gameKey = (name: string) => name.normalize('NFC').toLowerCase();
 export class GameService {
+  clear() {
+    this.games.clear();
+    this.deletions.clear();
+  }
   games = new Map<string, Game>();
   private deletions = new Map<
     string,

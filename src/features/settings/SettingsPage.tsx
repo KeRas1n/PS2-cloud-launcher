@@ -6,6 +6,7 @@ import { PageHeading } from '../../components/PageHeading';
 import { CloudSettings } from './CloudSettings';
 import { EmulatorSettings } from './EmulatorSettings';
 import { GamesSettings } from './GamesSettings';
+import { ResetSettings } from './ResetSettings';
 export function SettingsPage() {
   const { disabled, settingsChanged, act, savePreferences, settingsTab, setSettingsTab } = useLauncher();
 
@@ -13,12 +14,14 @@ export function SettingsPage() {
     <>
       <div className="settings-heading">
         <PageHeading title="Settings" />
-        <Button
-          disabled={disabled || !settingsChanged}
-          onClick={() => void act('Saving preferences', savePreferences, 'Preferences saved')}
-        >
-          <Check size={17} /> Save changes
-        </Button>
+        {settingsTab !== 'Data' && (
+          <Button
+            disabled={disabled || !settingsChanged}
+            onClick={() => void act('Saving preferences', savePreferences, 'Preferences saved')}
+          >
+            <Check size={17} /> Save changes
+          </Button>
+        )}
       </div>
       <div className="settings-tabs" role="tablist" aria-label="Settings categories">
         {settingsTabs.map((tab, index) => (
@@ -48,7 +51,7 @@ export function SettingsPage() {
               }
             }}
           >
-            {tab}
+            {tab === 'Data' ? 'Reset data' : tab}
           </button>
         ))}
       </div>
@@ -56,6 +59,7 @@ export function SettingsPage() {
       {settingsTab === 'Games' && <GamesSettings />}
       {settingsTab === 'Emulator' && <EmulatorSettings />}
       {settingsTab === 'Cloud' && <CloudSettings />}
+      {settingsTab === 'Data' && <ResetSettings />}
     </>
   );
 }

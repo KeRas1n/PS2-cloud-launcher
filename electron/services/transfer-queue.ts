@@ -29,6 +29,12 @@ export class TransferQueue {
   get active() {
     return this.list().some(isActiveTransfer);
   }
+  async clearHistory() {
+    if (this.active) throw new Error('Finish or cancel all transfers before resetting launcher data.');
+    await Promise.all([...this.work.values()].map((work) => this.cleanup(work)));
+    this.work.clear();
+    this.publish();
+  }
   get activeSaves() {
     return this.list().some((t) => t.kind !== 'Games' && ['running', 'cancelling'].includes(t.state));
   }

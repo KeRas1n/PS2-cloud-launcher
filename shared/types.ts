@@ -131,6 +131,7 @@ export interface Snapshot {
 export interface LauncherAPI {
   snapshot(): Promise<Snapshot>;
   saveSettings(settings: Settings): Promise<Settings>;
+  resetLauncher(confirmed: boolean): Promise<void>;
   pick(kind: 'directory' | 'executable' | 'bios' | 'cover'): Promise<string | null>;
   library(): Promise<Library>;
   installEmulator(): Promise<EmulatorStatus>;

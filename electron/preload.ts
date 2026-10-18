@@ -3,6 +3,7 @@ import type { LauncherAPI, Progress } from '../shared/types';
 const api: LauncherAPI = {
   snapshot: () => ipcRenderer.invoke('snapshot'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
+  resetLauncher: (confirmed) => ipcRenderer.invoke('settings:reset', confirmed),
   pick: (kind) => ipcRenderer.invoke('dialog:pick', kind),
   library: () => ipcRenderer.invoke('games:list'),
   installEmulator: () => ipcRenderer.invoke('emulator:install'),

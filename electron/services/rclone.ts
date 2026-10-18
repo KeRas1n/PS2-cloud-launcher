@@ -43,6 +43,11 @@ export class RcloneService {
     this.dispose();
     await this.control.closed();
   }
+  async resetSession() {
+    await this.close();
+    await this.log.flush();
+    this.log = new TransferLog(this.store.userData);
+  }
   setCancellation(signal: AbortSignal) {
     this.transferSignal = signal;
   }

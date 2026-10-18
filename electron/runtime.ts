@@ -11,6 +11,7 @@ import { RcloneService } from './services/rclone';
 import { SettingsStore } from './services/settings';
 import { SyncService } from './services/sync';
 import { TransferQueue } from './services/transfer-queue';
+import { deleteLauncherData, prepareLauncherReset } from './services/reset';
 
 import type { WindowReference } from './window';
 export async function createRuntime(launcherDir: string, windows: WindowReference) {
@@ -74,6 +75,8 @@ export async function createRuntime(launcherDir: string, windows: WindowReferenc
   );
   const session = { cloud: false };
   let modifying = false;
+  let resetting = false;
+  let requests = 0;
   const transfers = new TransferQueue(
     (items) => {
       if (windows.current && !windows.current.isDestroyed())
@@ -156,6 +159,41 @@ export async function createRuntime(launcherDir: string, windows: WindowReferenc
     exclusive,
     enqueueTransfer,
     session,
+    get resetting() {
+      return resetting;
+    },
+    async request<T>(channel: string, action: () => Promise<T> | T): Promise<T> {
+      if (resetting) throw new Error('Launcher data is being reset. Please wait.');
+      if (channel === 'settings:reset' && requests)
+        throw new Error('Wait for the current operation to finish before resetting launcher data.');
+      requests++;
+      try {
+        return await action();
+      } finally {
+        requests--;
+      }
+    },
+    async resetLauncher() {
+      if (pcsx2.running) throw new Error('Close PCSX2 before resetting launcher data.');
+      if (transfers.active) throw new Error('Finish or cancel all transfers before resetting launcher data.');
+      return exclusive(async () => {
+        resetting = true;
+        try {
+          const targets = await prepareLauncherReset(store.userData, store.value);
+          await transfers.clearHistory();
+          await rclone.resetSession();
+          const browserSession = windows.current?.webContents.session;
+          await browserSession?.clearCache();
+          await browserSession?.clearStorageData();
+          await deleteLauncherData(store, targets);
+          games.clear();
+          sync.clearPlans();
+          session.cloud = false;
+        } finally {
+          resetting = false;
+        }
+      });
+    },
     get modifying() {
       return modifying;
     },

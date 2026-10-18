@@ -13,10 +13,12 @@ export function registerIpc(
   devUrl: string | undefined,
   rendererFile: string,
 ) {
+  const register = createIpcHandler(windows, devUrl, rendererFile);
   const context = {
     runtime,
     windows,
-    handle: createIpcHandler(windows, devUrl, rendererFile),
+    handle: (channel: string, callback: (...args: any[]) => unknown) =>
+      register(channel, (...args) => runtime.request(channel, () => callback(...args))),
     pick: createFilePicker(windows),
   };
   registerGamesHandlers(context);

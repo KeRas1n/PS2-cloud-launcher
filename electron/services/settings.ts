@@ -116,6 +116,20 @@ export class SettingsStore {
     this.value = settings;
     return settings;
   }
+  async resetPreferences() {
+    // Retain discovery paths, including external installations and existing PCSX2 profiles.
+    return this.save({
+      ...this.value,
+      cloudProvider: 'dropbox',
+      cloudProfiles: {},
+      rclonePath: 'rclone',
+      rcloneConfig: path.join(this.userData, 'credentials', 'rclone.conf'),
+      remote: 'ps2-dropbox',
+      cloudRoot: 'PS2Cloud',
+      fullscreen: true,
+      autoSyncSaves: true,
+    });
+  }
   async selectCloudProvider(provider: CloudProvider) {
     if (provider === this.value.cloudProvider) return this.value;
     const current = this.value;

@@ -60,6 +60,9 @@ export async function rejectSymlinks(target: string) {
   }
 }
 export class SyncService {
+  clearPlans() {
+    this.plans.clear();
+  }
   private plans = new Map<string, Prepared>();
   busy = false;
   constructor(

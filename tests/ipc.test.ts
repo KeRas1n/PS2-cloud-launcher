@@ -6,12 +6,14 @@ import type { WindowReference } from '../electron/window';
 
 const registered = vi.hoisted(() => new Map<string, (...args: any[]) => Promise<unknown>>());
 vi.mock('electron', () => ({
+  shell: { openExternal: vi.fn() },
   ipcMain: {
     handle: (channel: string, callback: (...args: any[]) => Promise<unknown>) =>
       registered.set(channel, callback),
   },
 }));
 import { createIpcHandler } from '../electron/ipc/handle';
+import { registerSettingsHandlers } from '../electron/ipc/settings';
 
 beforeEach(() => registered.clear());
 
@@ -35,6 +37,20 @@ function fixture(devUrl?: string) {
 }
 
 describe('shared IPC boundary', () => {
+  it('requires explicit confirmation before resetting launcher data', async () => {
+    const resetLauncher = vi.fn(async () => {});
+    registerSettingsHandlers({
+      runtime: { resetLauncher },
+      handle: (channel: string, callback: (...args: any[]) => unknown) =>
+        registered.set(channel, async (...args) => callback(...args)),
+    } as unknown as Parameters<typeof registerSettingsHandlers>[0]);
+    for (const value of [false, undefined, 'true', 1]) {
+      await expect(registered.get('settings:reset')!(value)).rejects.toThrow();
+    }
+    expect(resetLauncher).not.toHaveBeenCalled();
+    await registered.get('settings:reset')!(true);
+    expect(resetLauncher).toHaveBeenCalledOnce();
+  });
   it('accepts the main renderer in development and packaged mode', async () => {
     for (const devUrl of ['http://127.0.0.1:5173', undefined]) {
       const f = fixture(devUrl);

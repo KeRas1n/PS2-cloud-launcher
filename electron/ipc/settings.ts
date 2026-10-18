@@ -17,6 +17,10 @@ export function registerSettingsHandlers({ runtime, handle, pick }: IpcContext) 
       return result;
     }),
   );
+  handle('settings:reset', (confirmed) => {
+    if (z.literal(true).parse(confirmed) !== true) throw new Error('Reset requires confirmation.');
+    return runtime.resetLauncher();
+  });
   handle('dialog:pick', (kind) => pick(z.enum(['directory', 'executable', 'bios', 'cover']).parse(kind)));
   handle('link:open', (link) =>
     shell.openExternal(

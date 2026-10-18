@@ -38,6 +38,19 @@ Integration tests are opt-in: they download official PCSX2 and Rclone binaries i
 4. **Cloud:** choose **Dropbox** or **MEGA**. Dropbox connects through browser authorization; MEGA uses the email/password form, with an optional two-factor code. Windows/Linux x64 packages include Rclone as a private cloud component; no separate application installation or configuration is needed. Development builds download it automatically on connection when unavailable. You supply your own cloud account, without developer API keys or a hosted service.
 5. Saves synchronize automatically before gameplay and after PCSX2 closes. Keep the launcher open while playing. Use **Sync saves now** to retry, or disable automatic synchronization in Settings. Games transfer only on request through game-card actions. Manual upload/download buttons still offer a preview before transferring.
 
+## Reset launcher data
+
+Open **Settings → Reset data** to remove saved cloud connections, launcher preferences,
+covers, logs, synchronization history and caches. Confirm **Delete data and reload**;
+the launcher reloads after completion. PCSX2 must be closed and all transfers finished
+or cancelled first.
+
+Games, BIOS, memory cards, save states, backups, PCSX2 binaries and PCSX2 settings stay
+on disk. Their configured paths are retained. Cloud files and custom external Rclone
+configuration files are kept; the launcher switches back to its own disconnected
+configuration. If launcher metadata overlaps protected game/emulator paths, reset
+refuses to delete anything. `npm run test:reset` verifies this using an isolated profile.
+
 ## Emulator storage and existing installations
 
 The launcher first tries `emulator/` alongside its executable (alongside the outer AppImage or portable EXE when applicable). If that directory cannot be written, it uses `emulator/` inside Electron's per-user data directory. Settings can override the installation and data paths.
