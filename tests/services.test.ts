@@ -104,10 +104,15 @@ describe('PCSX2 release and data handling', () => {
     const exited = new Promise<void>((resolve) => {
       resolveExit = resolve;
     });
-    const service = new PCSX2Service(store, (progress) => {
-      if (progress.emulatorRunning !== undefined) states.push(progress.emulatorRunning);
-      if (progress.emulatorRunning === false) resolveExit();
-    });
+    const onClosed = vi.fn();
+    const service = new PCSX2Service(
+      store,
+      (progress) => {
+        if (progress.emulatorRunning !== undefined) states.push(progress.emulatorRunning);
+        if (progress.emulatorRunning === false) resolveExit();
+      },
+      onClosed,
+    );
     vi.spyOn(service.profiles, 'prepare').mockResolvedValue({
       directory: root,
       prepared: true,
@@ -121,6 +126,7 @@ describe('PCSX2 release and data handling', () => {
     await exited;
     expect(states).toEqual([true, false]);
     expect(service.running).toBe(false);
+    expect(onClosed).toHaveBeenCalledTimes(1);
   });
 });
 describe('game discovery', () => {

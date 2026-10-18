@@ -53,6 +53,7 @@ export class PCSX2Service {
   constructor(
     private store: SettingsStore,
     private emit: (p: Progress) => void,
+    private onClosed?: () => void,
   ) {
     this.profiles = new PCSX2ProfileService(store);
   }
@@ -211,6 +212,7 @@ export class PCSX2Service {
             ? `PCSX2 exited with code ${code}. Check BIOS and system dependencies.`
             : 'PCSX2 closed',
         });
+        this.onClosed?.();
       });
     });
   }

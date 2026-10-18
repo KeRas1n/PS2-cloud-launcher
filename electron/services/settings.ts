@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { z } from 'zod';
-import type { Settings } from '../../shared/types';
+import type { CloudProvider, Settings } from '../../shared/types';
 import { atomicJson } from './files';
 
 const absolute = z
@@ -14,6 +14,14 @@ const absolute = z
   );
 export const settingsSchema = z
   .object({
+    cloudProvider: z.enum(['dropbox', 'mega']).default('dropbox'),
+    cloudProfiles: z
+      .object({
+        dropbox: z.object({ remote: z.string(), cloudRoot: z.string() }).optional(),
+        mega: z.object({ remote: z.string(), cloudRoot: z.string() }).optional(),
+      })
+      .strict()
+      .default({}),
     gameDirectories: z.array(absolute).max(50),
     downloadDirectory: absolute,
     emulatorRoot: absolute,
@@ -51,6 +59,7 @@ export const settingsSchema = z
         'Use a relative cloud folder.',
       ),
     fullscreen: z.boolean(),
+    autoSyncSaves: z.boolean().default(true),
   })
   .strict();
 
@@ -72,6 +81,8 @@ export class SettingsStore {
     }
     const data = path.join(root, 'data');
     this.value = {
+      cloudProvider: 'dropbox',
+      cloudProfiles: {},
       gameDirectories: [],
       downloadDirectory: path.join(this.userData, 'Games'),
       emulatorRoot: root,
@@ -85,6 +96,7 @@ export class SettingsStore {
       remote: 'ps2-dropbox',
       cloudRoot: 'PS2Cloud',
       fullscreen: true,
+      autoSyncSaves: true,
     };
     try {
       this.value = this.validate(
@@ -104,8 +116,27 @@ export class SettingsStore {
     this.value = settings;
     return settings;
   }
+  async selectCloudProvider(provider: CloudProvider) {
+    if (provider === this.value.cloudProvider) return this.value;
+    const current = this.value;
+    const profile = current.cloudProfiles[provider] ?? { remote: `ps2-${provider}`, cloudRoot: 'PS2Cloud' };
+    return this.save({
+      ...current,
+      ...profile,
+      cloudProvider: provider,
+      cloudProfiles: {
+        ...current.cloudProfiles,
+        [current.cloudProvider]: { remote: current.remote, cloudRoot: current.cloudRoot },
+      },
+    });
+  }
   private validate(input: unknown) {
     const settings = settingsSchema.parse(input);
+    // Saved profiles receive the same path/name validation as the active profile.
+    for (const profile of Object.values(settings.cloudProfiles)) {
+      settingsSchema.shape.remote.parse(profile.remote);
+      settingsSchema.shape.cloudRoot.parse(profile.cloudRoot);
+    }
     const contains = (parent: string, child: string) => {
       const relative = path.relative(path.resolve(parent), path.resolve(child));
       return (
@@ -117,12 +148,15 @@ export class SettingsStore {
     if (saveDirs.some((folder, i) => saveDirs.some((other, j) => i !== j && contains(folder, other))))
       throw new Error('BIOS, memory cards and save states need separate, non-overlapping directories.');
     const backups = path.join(this.userData, 'backups');
+    const autoSync = path.join(this.userData, 'auto-sync');
     for (const folder of [settings.memcardsDirectory, settings.saveStatesDirectory]) {
       if (
         contains(folder, this.userData) ||
         contains(folder, settings.rcloneConfig) ||
         contains(folder, backups) ||
-        contains(backups, folder)
+        contains(backups, folder) ||
+        contains(folder, autoSync) ||
+        contains(autoSync, folder)
       )
         throw new Error(
           'Save sync directories must not contain launcher credentials, preferences, or backups.',

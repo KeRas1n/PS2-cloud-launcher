@@ -5,6 +5,7 @@ export interface RunOptions {
   onLine?: (line: string) => void;
   maxOutput?: number;
   privateOutput?: boolean;
+  privateError?: string;
 }
 export function run(binary: string, args: string[], options: RunOptions = {}): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -52,7 +53,8 @@ export function run(binary: string, args: string[], options: RunOptions = {}): P
         reject(
           new Error(
             options.privateOutput
-              ? 'Dropbox authorization failed or was cancelled. Try again in your browser.'
+              ? (options.privateError ??
+                  'Cloud sign-in failed or was cancelled. Check your account and try again.')
               : `${binary.split(/[\\/]/).pop()} exited with code ${code}: ${stderr.replace(/(access_token|refresh_token|client_secret)[^,\n]*/gi, '$1: [redacted]').slice(-1800)}`,
           ),
         );

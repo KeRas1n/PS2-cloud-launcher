@@ -30,8 +30,8 @@ Integration tests are opt-in: they download official PCSX2 and Rclone binaries i
 1. **Emulator:** select **Install PCSX2**. The launcher resolves the latest non-prerelease from `PCSX2/pcsx2` on GitHub and selects the Windows portable archive or Linux AppImage. Automatic installation requires x86-64. You may select an existing executable in Settings instead.
 2. Import an uncompressed BIOS dumped from your own console in **Emulator**. Its ROM directory is checked before importing, and the launcher selects it automatically. Choose another imported BIOS from the launcher dropdown if needed. The launcher never provides BIOS or game downloads. **Prepare emulator** can create a profile in advance; game launch also prepares it automatically. No PCSX2 setup wizard is needed.
 3. **Settings:** add folders containing your own `.iso` and `.chd` images. Save preferences. Scanning is recursive, skips hidden entries and symbolic links, and includes the game download directory automatically.
-4. **Cloud:** install Rclone with the supplied button, or choose an existing executable. Click **Connect Dropbox** and authorize Rclone in your browser. Rclone uses its built-in Dropbox OAuth client; you supply your own account, without developer API keys or a hosted service.
-5. Use game-card actions for disc images, and the four manual save buttons for memory cards and save states. Every transfer gets a review dialog before it begins.
+4. **Cloud:** choose **Dropbox** or **MEGA**. Dropbox connects through browser authorization; MEGA uses the email/password form, with an optional two-factor code. Windows/Linux x64 packages include Rclone as a private cloud component; no separate application installation or configuration is needed. Development builds download it automatically on connection when unavailable. You supply your own cloud account, without developer API keys or a hosted service.
+5. Saves synchronize automatically before gameplay and after PCSX2 closes. Keep the launcher open while playing. Use **Sync saves now** to retry, or disable automatic synchronization in Settings. Games transfer only on request through game-card actions. Manual upload/download buttons still offer a preview before transferring.
 
 ## Emulator storage and existing installations
 
@@ -58,9 +58,17 @@ If older launcher versions let the wizard populate `<parent>/PCSX2/memcards`, `s
 
 PCSX2 detection checks the configured path, managed manifest, PATH, Windows `Program Files/PCSX2`, and Linux `/usr/bin/pcsx2`. Choose other installations manually. Flatpak launch wrappers are not automatically managed. External installations report `-version` where supported. Updating an external installation creates a managed copy; it does not overwrite that external installation.
 
-## Dropbox and save safety
+## Cloud storage and save safety
 
-The default remote is `ps2-dropbox`; the default root is `PS2Cloud`. Change both in Settings. For an existing Rclone configuration, enter its absolute configuration path before connecting. New configurations are stored in the launcher user-data `credentials/rclone.conf`; credentials never enter renderer code or preferences JSON. Linux configuration permissions are restricted to the current user. On Windows, keep the configuration in your private user profile; the launcher inherits its filesystem ACLs.
+Dropbox's default remote is `ps2-dropbox`; MEGA's is `ps2-mega`. Both default to `PS2Cloud`. Change the selected provider in **Cloud**, and its folder in Settings. Remote names, custom executable and existing configuration paths are under **Advanced cloud settings**. Switching remembers each provider's remote/folder and keeps both saved connections; existing Dropbox preferences migrate automatically. Switching is blocked during gameplay and transfers. It does not itself transfer or delete files. The game library refreshes from the selected cloud. Local games and save directories remain shared; subsequent save synchronization merges current local saves with the selected cloud, using its own history and normal conflict/backup rules.
+
+Packaged builds prefer the included executable. Configurations are stored in the launcher user-data `credentials/rclone.conf`. Saved credentials are never returned to the renderer or stored in preferences JSON. MEGA credentials enter through the form, pass to the backend once and are cleared from the password/code fields after submission. They are sent to the private Rclone API over authenticated loopback HTTP, never command-line arguments. The password is stored using Rclone's reversible obscuring, not encryption; MEGA may also persist session keys in this configuration. Two-factor codes are held in memory and never written by the launcher. Linux configuration permissions are restricted to the current user. On Windows, keep the configuration in your private user profile; the launcher inherits its filesystem ACLs.
+
+MEGA uses a persistent Rclone process to reuse the login session across listing and transfer operations. Its API binds only to `127.0.0.1` on a random port with a random per-process password and shuts down when switching providers or quitting. **Change MEGA account** replaces only the MEGA connection; a failed login restores the previous configuration, including Dropbox. A fresh MEGA account must first be opened in a browser to initialize its keys. If an expired session or two-factor authentication prevents access, reconnect with a fresh code. Provider transfer quotas still apply. MEGA does not preserve uploaded modification times or provide hashes, so automatic save comparison downloads content and computes SHA-256 locally. Duplicate remote paths are rejected.
+
+Automatic save synchronization compares SHA-256 content hashes against the last successful synchronization for this provider, configuration and save-folder pair. New files merge in both directions; deletions are never propagated. If both copies differ without a known common version, a dialog offers local saves, cloud saves, or cancellation. Cancellation stops game launch and applies no file transfers. Replaced copies are retained in the same backup locations as manual transfers. Sync history advances only after both sides have been downloaded and verified again; partial failures do not mark saves as synchronized. Save content is downloaded to temporary private staging directories for comparison, then removed. This uses extra bandwidth, especially for large save-state collections.
+
+An unconnected installation plays locally. Once connected, synchronization failure before a game offers **Cancel** or **Play offline**. After gameplay the launcher attempts synchronization again, including for an offline session, and reports failures with local saves retained. **Sync saves now** retries without launching a game. Avoid playing on another device until synchronization succeeds. The launcher stays open during a connected game session so it can handle the emulator exit; forced termination, OS shutdown, or an external emulator process cannot guarantee an upload. There is no cross-device lock: avoid simultaneous gameplay. Rechecks detect common concurrent edits but cannot make cloud writes atomic across clients.
 
 ```text
 PS2Cloud/
@@ -74,14 +82,24 @@ Rclone opens Dropbox OAuth in your default browser. Approve it there and leave t
 
 Transfers use **`rclone copyto`, never `rclone sync` or delete**. Each preview lists source sizes, destination sizes and replacements. Existing destinations are conservatively treated as conflicts, including same-size files. A confirmed transfer rechecks source/destination metadata and settings; a stale preview must be reviewed again. Missing source files never remove destination files. Symbolic links in local destination paths and cloud path traversal are rejected.
 
-Before an existing file is replaced, Rclone's `--backup-dir` preserves it. Upload backups remain in Dropbox under `Backups/<transfer-id>/<category>/`; download backups stay in the launcher's user-data `backups/<transfer-id>/<category>/`. Nested paths are preserved. A failed transfer may leave completed files and their backups; refresh and review a new preview before retrying. Backups are retained until you remove them yourself. Ensure sufficient storage for both originals and replacements.
+Before an existing file is replaced, Rclone's `--backup-dir` preserves it. Upload backups remain in the selected cloud under `Backups/<transfer-id>/<category>/`; download backups stay in the launcher's user-data `backups/<transfer-id>/<category>/`. Nested paths are preserved. A failed transfer may leave completed files and their backups; refresh and review a new preview before retrying. Backups are retained until you remove them yourself. Ensure sufficient storage for both originals and replacements.
 
 Metadata checks prevent common stale-preview mistakes, but cannot lock remote clients or independently running emulators. Close PCSX2 and avoid modifying the same files on another device during transfers. Use compatible PCSX2 versions across devices for save states.
 
 ## Library behavior and artwork
 
+### MEGA transfer performance and diagnostics
+
+MEGA's existing persistent Rclone process is retained. Runtime flags force `--mega-use-https`, `--bwlimit off`, `--bwlimit-file off`, and `--tpslimit 0`, including for older saved accounts. MEGA downloads to disk use four streams above 64 MiB with 16 MiB chunks. Uploads retain the MEGA backend's normal behavior; download threading does not imply parallel MEGA uploads. Dropbox transfer/authentication behavior and provider switching remain supported.
+
+Transfer UI shows payload speed in B/s, KiB/s or MiB/s, plus the average since this transfer started. Current speed uses byte deltas over each sample interval, including zero during stalls. Each MEGA transfer has its own Rclone stats group, preventing previous jobs or global averages from distorting progress. These are payload rates, not total encrypted network traffic.
+
+**Cloud > Open transfer logs** opens `<userData>/logs/`. `transfers.jsonl` records start/finish, effective MEGA options, per-second bytes, current/average/Rclone speed, elapsed time, retries, quota/HTTP error categories and multi-thread activity. Logs rotate at 5 MiB and retain one previous file. Passwords, tokens, signed URLs and raw backend responses are excluded; debug output is reduced to approved structured fields. Logging failures do not fail transfers.
+
+To compare direct Rclone, the identical command launched from Electron, and the normal Electron MEGA service, build first and create an ignored manifest JSON with absolute `binary` and `config` paths, a `remote` object path, and optional local `source` reference for SHA-256 verification. Use an isolated config copy because Rclone may refresh saved sessions. `npm run benchmark:mega -- --manifest <manifest.json> --output test-results/mega-benchmark` runs single/four-stream downloads with a 120-second limit per case. It only downloads existing objects and writes reports/temporary files locally. `--cases direct-multi,electron-cli-multi,electron-rc-multi` runs the matched four-stream comparison. Compare repeated cases: MEGA/server/network conditions vary, so one sample does not establish Electron overhead. A synthetic 128 MiB image was used for live verification; no user game was available in the connected account.
+
 - **Local Only:** Play locally or **Upload to Cloud**.
-- **In Cloud:** available on disk and Dropbox; **Play**.
+- **In Cloud:** available on disk and the selected cloud; **Play**.
 - **Cloud Only:** **Download** to the configured directory, then **Play** after automatic refresh.
 
 Matching uses the complete filename, case-insensitively, including extension. It does not prove disc contents match. Distinct discs must have distinct names; duplicate names produce notices. Case conflicts are blocked before transfers. Without a successful cloud listing, local entries show **Cloud unchecked** rather than claiming verified absence. Refresh after external filesystem changes.
@@ -97,13 +115,16 @@ electron/preload.ts             contextBridge API; no raw IPC exposure
 electron/services/settings.ts   Validated, atomic preferences
 electron/services/pcsx2.ts      Detection, release installation, process lifecycle
 electron/services/games.ts      Recursive discovery and cloud comparison
-electron/services/rclone.ts     Official installation, OAuth, remote listing, progress
+electron/services/rclone.ts     Bundled component, Dropbox/MEGA sign-in, listing
+electron/services/rclone-rc.ts  Private persistent MEGA session and transfer API
+electron/services/auto-sync.ts  Three-way content comparison, conflict choices, save merge
 electron/services/sync.ts       Conflict plans, stale checks, copy-only execution
 src/App.tsx                     Four pages, notifications and transfer review
 src/styles.css                  Responsive dark interface and reduced-motion support
 tests/services.test.ts          Service regression tests
 scripts/smoke.cjs               Real Electron IPC and UI smoke test
 scripts/integration.cjs         Official binary / real Rclone integration
+scripts/verify-cloud.cjs        Two-device merge and provider switching with isolated aliases
 ```
 
 The renderer has no Node.js integration. Context isolation, sandboxing, CSP, sender validation, schema-validated IPC, denied permissions and blocked arbitrary navigation are enabled. Processes run with argument arrays and no shell. External links are restricted to fixed documentation URLs. No credentials are logged by the OAuth flow. Keep configuration files, user data, emulator files and `.env` files out of Git.
@@ -112,16 +133,18 @@ The renderer has no Node.js integration. Context isolation, sandboxing, CSP, sen
 
 GitHub Actions tests and builds Windows and Linux on native runners. Tags and manual workflow runs also execute official-binary and real Rclone integration tests on both platforms. A `v*` tag creates a **draft** GitHub release with Windows installers and Linux packages after both builds pass. No signing certificate is configured; configure signing before distributing production releases. Normal pushes and pull requests upload build artifacts without publishing a release.
 
-The launcher requires a real Dropbox authorization for end-to-end Dropbox verification and your own BIOS/disc for gameplay testing. The repository does not contain either. No automatic background save sync, deletion mirroring, automatic artwork downloads or paid backend is included.
+Packaging downloads pinned Rclone v1.75.2 for the target Windows/Linux x64 platform, verifies the official SHA-256 archive checksum and includes the executable, version and upstream MIT license in `resources/cloud/`. The packaging hook fails if download or verification fails, rather than shipping an installer without its cloud component.
+
+The launcher requires real Dropbox/MEGA accounts for end-to-end provider verification and your own BIOS/disc for gameplay testing. The repository does not contain either. No deletion mirroring, automatic artwork downloads or paid backend is included.
 
 ## Troubleshooting
 
 - **GitHub release rate limit:** retry later; anonymous GitHub API limits apply. No GitHub credentials are required.
-- **Rclone not found:** install through Cloud, ensure `rclone` is on PATH, or select its absolute executable path.
-- **Cloud disconnected:** check the remote/config path, reconnect, and review the reported error. Account quotas and Dropbox permissions still apply.
+- **Cloud component unavailable:** reconnect to prepare the component automatically. Official packages include it; reinstall if bundled files were removed.
+- **Cloud disconnected:** check the remote/config path, reconnect, and review the reported error. Provider permissions, transfer quotas and MEGA two-factor authentication still apply.
 - **PCSX2 does not launch:** import/select a valid uncompressed BIOS in Emulator, check paths, and review the PCSX2 `logs/emulog.txt` in the displayed profile directory. On Windows, PCSX2 may need the current Visual C++ runtime; see [official setup](https://pcsx2.net/docs/setup/).
 - **Existing save not visible:** point Settings at its actual directory and close/reopen PCSX2. An imported external install is not automatically migrated.
 - **Invalid preferences file:** repair or rename `settings.json` in Electron user data. Invalid files are not silently overwritten.
 - **Windows packaging fails renaming the extracted runtime:** retry with the installed runtime: `npx electron-builder --win --x64 --publish never --config.electronDist=node_modules/electron/dist`. Use a fresh output directory if a previous unpacked application is still running.
 
-MIT license applies to launcher code. PCSX2, Rclone and 7-Zip retain their own licenses; packaging retains dependency license files. This project is not affiliated with Sony, Dropbox, PCSX2 or Rclone.
+MIT license applies to launcher code. PCSX2, Rclone and 7-Zip retain their own licenses; packaging retains dependency license files. This project is not affiliated with Sony, Dropbox, MEGA, PCSX2 or Rclone.

@@ -1,4 +1,16 @@
+export type CloudProvider = 'dropbox' | 'mega';
+export interface CloudProfile {
+  remote: string;
+  cloudRoot: string;
+}
+export interface MegaCredentials {
+  email: string;
+  password: string;
+  code?: string;
+}
 export interface Settings {
+  cloudProvider: CloudProvider;
+  cloudProfiles: Partial<Record<CloudProvider, CloudProfile>>;
   gameDirectories: string[];
   downloadDirectory: string;
   emulatorRoot: string;
@@ -12,6 +24,7 @@ export interface Settings {
   remote: string;
   cloudRoot: string;
   fullscreen: boolean;
+  autoSyncSaves: boolean;
 }
 export type GameState = 'Local Only' | 'In Cloud' | 'Cloud Only';
 export interface Game {
@@ -84,7 +97,9 @@ export interface Progress {
   bytes?: number;
   totalBytes?: number;
   speed?: number;
+  averageSpeed?: number;
   emulatorRunning?: boolean;
+  saveSyncRunning?: boolean;
 }
 export interface Snapshot {
   settings: Settings;
@@ -103,10 +118,13 @@ export interface LauncherAPI {
   importBios(): Promise<number>;
   setCover(gameId: string): Promise<void>;
   installRclone(): Promise<void>;
-  connectCloud(): Promise<CloudStatus>;
+  connectCloud(credentials?: MegaCredentials): Promise<CloudStatus>;
+  selectCloudProvider(provider: CloudProvider): Promise<Settings>;
+  syncSaves(): Promise<void>;
+  openTransferLogs(): Promise<void>;
   planSync(request: SyncRequest): Promise<SyncPlan>;
   executeSync(id: string, confirmed: boolean): Promise<void>;
   cancelPlan(id: string): Promise<void>;
-  openLink(link: 'pcsx2' | 'rclone' | 'dropbox'): Promise<void>;
+  openLink(link: 'pcsx2' | 'rclone' | 'dropbox' | 'mega'): Promise<void>;
   onProgress(callback: (progress: Progress) => void): () => void;
 }

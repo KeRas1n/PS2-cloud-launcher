@@ -27,8 +27,19 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import type { Game, Library, Progress, Settings, Snapshot, SyncPlan, SyncRequest } from '../shared/types';
+import type {
+  CloudProvider,
+  Game,
+  Library,
+  Progress,
+  Settings,
+  Snapshot,
+  SyncPlan,
+  SyncRequest,
+} from '../shared/types';
 
+type SettingsTab = 'Games' | 'Emulator' | 'Cloud';
+const settingsTabs: SettingsTab[] = ['Games', 'Emulator', 'Cloud'];
 type Page = 'Games' | 'Emulator' | 'Cloud' | 'Settings';
 const api = window.launcher;
 const navigation = [
@@ -41,6 +52,11 @@ export function size(bytes: number) {
   if (!bytes) return '0 B';
   const unit = Math.max(0, Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), 4));
   return `${(bytes / 1024 ** unit).toFixed(unit > 1 ? 1 : 0)} ${['B', 'KB', 'MB', 'GB', 'TB'][unit]}`;
+}
+export function transferRate(bytes: number) {
+  if (bytes < 1024) return `${Math.max(0, Math.round(bytes))} B/s`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB/s`;
+  return `${(bytes / 1024 / 1024).toFixed(2)} MiB/s`;
 }
 function Button({
   children,
@@ -75,10 +91,16 @@ function Badge({ children, good = false }: { children: ReactNode; good?: boolean
 }
 export default function App() {
   const [page, setPage] = useState<Page>('Games');
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('Games');
+  function goToSettings(tab: SettingsTab) {
+    setSettingsTab(tab);
+    setPage('Settings');
+  }
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [library, setLibrary] = useState<Library>({ games: [], warnings: [], cloudChecked: false });
   const [draft, setDraft] = useState<Settings>();
   const [busy, setBusy] = useState('');
+  const [saveSyncRunning, setSaveSyncRunning] = useState(false);
   const [booting, setBooting] = useState(true);
   const [progress, setProgress] = useState<Progress>();
   const [error, setError] = useState('');
@@ -87,6 +109,35 @@ export default function App() {
   const [filter, setFilter] = useState('All games');
   const [plan, setPlan] = useState<SyncPlan>();
   const [compact, setCompact] = useState(false);
+  const [megaEmail, setMegaEmail] = useState('');
+  const [megaPassword, setMegaPassword] = useState('');
+  const [megaCode, setMegaCode] = useState('');
+  const [changeMegaAccount, setChangeMegaAccount] = useState(false);
+  async function selectProvider(provider: CloudProvider) {
+    setMegaEmail('');
+    setMegaPassword('');
+    setMegaCode('');
+    setChangeMegaAccount(false);
+    setLibrary({ games: [], warnings: [], cloudChecked: false });
+    await act('Switching cloud storage', () => api!.selectCloudProvider(provider), 'Cloud storage changed');
+  }
+  async function connectMega() {
+    const credentials = {
+      email: megaEmail.trim(),
+      password: megaPassword,
+      ...(megaCode ? { code: megaCode } : {}),
+    };
+    setMegaPassword('');
+    setMegaCode('');
+    await act(
+      'Connecting MEGA',
+      async () => {
+        await api!.connectCloud(credentials);
+        setChangeMegaAccount(false);
+      },
+      'MEGA connected',
+    );
+  }
   async function refresh(scan = true) {
     if (!api) return;
     const value = await api.snapshot();
@@ -97,6 +148,7 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = api?.onProgress((progress) => {
       setProgress(progress);
+      if (progress.saveSyncRunning !== undefined) setSaveSyncRunning(progress.saveSyncRunning);
       if (progress.emulatorRunning !== undefined) {
         setSnapshot((current) =>
           current
@@ -184,7 +236,7 @@ export default function App() {
     setPlan(undefined);
   }
   const settingsChanged = !!draft && JSON.stringify(draft) !== JSON.stringify(snapshot?.settings);
-  const disabled = !!busy || booting || !api;
+  const disabled = !!busy || saveSyncRunning || booting || !api;
   const games = library.games.filter(
     (g) =>
       g.title.toLowerCase().includes(query.toLowerCase()) &&
@@ -193,6 +245,8 @@ export default function App() {
   const localCount = library.games.filter((g) => g.localPath).length;
   const cloudCount = library.games.filter((g) => g.cloudPath).length;
   const connected = !!snapshot?.cloud.connected;
+  const provider = snapshot?.settings.cloudProvider ?? 'dropbox';
+  const providerName = provider === 'mega' ? 'MEGA' : 'Dropbox';
   const emulator = snapshot?.emulator;
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setDraft((d) => (d ? { ...d, [key]: value } : d));
@@ -251,7 +305,6 @@ export default function App() {
             PS2<span>CLOUD LAUNCHER</span>
           </div>
         </div>
-        <div className="sidebar-label">WORKSPACE</div>
         <nav aria-label="Main navigation">
           {navigation.map(({ name, icon: Icon }) => (
             <button
@@ -267,35 +320,16 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-bottom">
-          <div className="cloud-summary">
-            <div className="cloud-summary-icon">
-              <Cloud size={20} />
-            </div>
-            <div>
-              <strong>Your private cloud</strong>
-              <small>{connected ? 'Dropbox connected' : 'Connect your Dropbox'}</small>
-            </div>
-            <i className={connected ? 'online' : ''} />
-          </div>
-          <p>
-            Your games. Your saves.
-            <br />
-            Always your own.
-          </p>
-          <div className="build-info">
-            <span className="tiny-dot" /> LOCAL FIRST <span>v0.1.2</span>
-          </div>
-        </div>
       </aside>
       <div className="workspace">
         <header className="topbar">
           <div className="breadcrumb">
-            Workspace <ChevronRight size={14} />
             <strong>{page}</strong>
           </div>
           <div className="topbar-actions">
-            <Badge good={connected}>{connected ? 'Dropbox connected' : 'Cloud disconnected'}</Badge>
+            <Badge good={connected}>
+              {connected ? `${providerName} connected` : `${providerName} disconnected`}
+            </Badge>
             <span className="header-divider" />
             <button
               className="icon-button"
@@ -305,7 +339,6 @@ export default function App() {
             >
               <Settings2 size={18} />
             </button>
-            <div className="avatar">P2</div>
           </div>
         </header>
         <main>
@@ -325,41 +358,6 @@ export default function App() {
           )}
           {page === 'Games' && (
             <>
-              <section className="hero">
-                <div className="hero-copy">
-                  <div className="eyebrow">
-                    <span /> YOUR NEXT SESSION STARTS HERE
-                  </div>
-                  <h1>
-                    A legendary library.
-                    <br />
-                    <span>Without limits.</span>
-                  </h1>
-                  <p>
-                    Bring your PlayStation 2 collection together.
-                    <br />
-                    Play locally. Pick up from your own cloud.
-                  </p>
-                  <div className="hero-actions">
-                    <Button onClick={() => setPage('Settings')}>
-                      <Plus size={17} /> Add game folder
-                    </Button>
-                    <button className="text-button" onClick={() => setPage(connected ? 'Cloud' : 'Emulator')}>
-                      {connected ? 'Manage cloud' : 'Set up your launcher'}
-                      <ArrowRight size={16} />
-                    </button>
-                  </div>
-                </div>
-                <div className="hero-art" aria-hidden="true">
-                  <div className="orbit orbit-one" />
-                  <div className="orbit orbit-two" />
-                  <div className="console-mark">Ⅱ</div>
-                  <div className="floating-label">
-                    <Gamepad2 size={16} /> PLAYSTATION 2
-                  </div>
-                  <div className="art-caption">THE CLASSICS LIVE ON</div>
-                </div>
-              </section>
               <div className="library-stats">
                 <span>
                   <HardDrive size={16} />
@@ -376,25 +374,26 @@ export default function App() {
                   </strong>{' '}
                   local library
                 </span>
-                <div className="stats-note">
-                  <ShieldCheck size={15} /> Your account. No subscription.
-                </div>
               </div>
               <div className="section-heading">
                 <div>
-                  <div className="eyebrow muted">YOUR COLLECTION</div>
                   <h2>
                     Game library <span>{library.games.length}</span>
                   </h2>
                 </div>
-                <Button
-                  secondary
-                  disabled={disabled}
-                  onClick={() => void act('Refreshing library', async () => {}, undefined)}
-                >
-                  <RefreshCw size={15} className={busy === 'Refreshing library' ? 'spin' : ''} /> Refresh
-                  library
-                </Button>
+                <div className="button-row">
+                  <Button secondary onClick={() => goToSettings('Games')}>
+                    <Plus size={16} /> Add game folder
+                  </Button>
+                  <Button
+                    secondary
+                    disabled={disabled}
+                    onClick={() => void act('Refreshing library', async () => {}, undefined)}
+                  >
+                    <RefreshCw size={15} className={busy === 'Refreshing library' ? 'spin' : ''} /> Refresh
+                    library
+                  </Button>
+                </div>
               </div>
               <div className="library-toolbar">
                 <div className="tabs">
@@ -412,7 +411,7 @@ export default function App() {
                   <label className="search">
                     <Search size={16} />
                     <input
-                      placeholder="Search your collection"
+                      placeholder="Search games"
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
                       aria-label="Search games"
@@ -460,53 +459,30 @@ export default function App() {
                 </div>
               ) : (
                 <div className="empty-library">
-                  <div className="empty-disc">
-                    <Disc3 size={42} />
-                    <span>
-                      <Plus size={14} />
-                    </span>
-                  </div>
-                  <h3>
-                    {query || filter !== 'All games' ? 'No matching games' : 'Make room for the classics'}
-                  </h3>
+                  <h3>{query || filter !== 'All games' ? 'No matching games' : 'No games found'}</h3>
                   <p>
                     {query || filter !== 'All games'
                       ? 'Try another search or library filter.'
-                      : 'Add a folder with your .iso or .chd files, or connect Dropbox to discover your cloud library.'}
+                      : `Add a folder with your .iso or .chd files, or connect ${providerName} to discover your cloud library.`}
                   </p>
                   {!query && filter === 'All games' && (
                     <div className="empty-actions">
-                      <Button secondary onClick={() => setPage('Settings')}>
+                      <Button secondary onClick={() => goToSettings('Games')}>
                         <FolderOpen size={16} /> Choose game folders
                       </Button>
                       <button className="text-button" onClick={() => setPage('Cloud')}>
-                        Connect Dropbox <ArrowRight size={15} />
+                        Connect {providerName} <ArrowRight size={15} />
                       </button>
                     </div>
                   )}
-                  <span className="file-types">
-                    ISO <span /> CHD <span /> WINDOWS & LINUX
-                  </span>
                 </div>
               )}
-              <div className="library-footnote">
-                <ShieldCheck size={15} />
-                <span>Built for your own collection. No games or BIOS files are included.</span>
-                <span className="footnote-right">POWERED BY PCSX2 + RCLONE</span>
-              </div>
             </>
           )}
           {page === 'Emulator' && (
             <>
-              <PageHeading
-                eyebrow="THE ENGINE BEHIND YOUR GAMES"
-                title="Emulator"
-                description="Official PCSX2. Managed locally, ready when you are."
-              />
+              <PageHeading title="Emulator" />
               <section className="panel emulator-panel">
-                <div className="emulator-logo">
-                  PS<span>2</span>
-                </div>
                 <div className="emulator-detail">
                   <div className="row">
                     <h2>PCSX2</h2>
@@ -514,11 +490,15 @@ export default function App() {
                       {emulator?.installed ? 'Installed' : 'Not installed'}
                     </Badge>
                   </div>
-                  <p>Open-source PlayStation 2 emulator</p>
                   <div className="emulator-version">
                     {emulator?.version || 'Latest stable release from the official GitHub repository'}
                   </div>
                   {emulator?.path && <code>{emulator.path}</code>}
+                  {emulator?.profile?.directory && (
+                    <div className="profile-directory">
+                      Profile directory<code>{emulator.profile.directory}</code>
+                    </div>
+                  )}
                   <div className="button-row">
                     <Button
                       disabled={disabled || emulator?.running}
@@ -551,181 +531,226 @@ export default function App() {
                   </div>
                 </div>
               </section>
-              <div className="two-columns">
-                <section className="panel">
-                  <div className="panel-symbol">
-                    <ShieldCheck />
-                  </div>
-                  <h3>Bring your own BIOS</h3>
-                  <p>
-                    Import an uncompressed BIOS dumped from your own PlayStation 2. The launcher validates and
-                    selects it here. No emulator setup wizard is needed.
-                  </p>
-                  <Button
-                    secondary
-                    disabled={disabled || emulator?.running}
-                    onClick={() =>
-                      void act(
-                        'Importing BIOS',
-                        async () => {
-                          const count = await api!.importBios();
-                          if (count) setNotice('BIOS imported. The launcher selects it automatically.');
-                        },
-                        undefined,
-                        false,
-                      )
-                    }
-                  >
-                    <Plus size={16} /> Import BIOS
-                  </Button>
-                  {!!emulator?.profile?.bios.length && (
-                    <label className="field">
-                      <span>Selected BIOS</span>
-                      <select
-                        className="profile-select"
-                        value={emulator.profile.selectedBios ?? ''}
-                        disabled={disabled || emulator.running || !emulator.installed}
-                        onChange={(event) =>
-                          void act(
-                            'Selecting BIOS',
-                            () => api!.selectBios(event.target.value),
-                            'BIOS selected',
-                            false,
-                          )
-                        }
-                      >
-                        {emulator.profile.bios.map((image) => (
-                          <option key={image.name} value={image.name}>
-                            {image.name} · {image.region} {image.version}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                  <div className="profile-readiness">
-                    <Badge good={!!emulator?.profile?.ready}>
-                      {emulator?.profile?.ready
-                        ? 'Ready to play'
-                        : emulator?.profile?.bios.length
-                          ? 'Prepared automatically on first launch'
-                          : 'Import a valid BIOS to play'}
-                    </Badge>
-                  </div>
-                </section>
-                <section className="panel">
-                  <div className="panel-symbol">
-                    <HardDrive />
-                  </div>
-                  <h3>Your progress stays put</h3>
-                  <p>
-                    Updates install into versioned folders. BIOS, settings, memory cards, and save states stay
-                    in your persistent data directory.
-                  </p>
-                  <code>
-                    {emulator?.profile?.directory ??
-                      snapshot?.settings.dataDirectory ??
-                      'Loading data directory…'}
-                  </code>
-                </section>
-              </div>
-              <section className="panel info-strip">
-                <div>
-                  <strong>Only your game window opens.</strong>
-                  <p>
-                    PCSX2 defaults are prepared automatically. The setup wizard, library, update prompts, and
-                    shutdown confirmation are disabled. Fresh profiles include keyboard controls; existing
-                    controller bindings are preserved.
-                  </p>
+              <section className="panel">
+                <div className="panel-symbol">
+                  <ShieldCheck />
+                </div>
+                <h3>BIOS</h3>
+                <p>Import an uncompressed BIOS from your PlayStation 2.</p>
+                <Button
+                  secondary
+                  disabled={disabled || emulator?.running}
+                  onClick={() =>
+                    void act(
+                      'Importing BIOS',
+                      async () => {
+                        const count = await api!.importBios();
+                        if (count) setNotice('BIOS imported. The launcher selects it automatically.');
+                      },
+                      undefined,
+                      false,
+                    )
+                  }
+                >
+                  <Plus size={16} /> Import BIOS
+                </Button>
+                {!!emulator?.profile?.bios.length && (
+                  <label className="field">
+                    <span>Selected BIOS</span>
+                    <select
+                      className="profile-select"
+                      value={emulator.profile.selectedBios ?? ''}
+                      disabled={disabled || emulator.running || !emulator.installed}
+                      onChange={(event) =>
+                        void act(
+                          'Selecting BIOS',
+                          () => api!.selectBios(event.target.value),
+                          'BIOS selected',
+                          false,
+                        )
+                      }
+                    >
+                      {emulator.profile.bios.map((image) => (
+                        <option key={image.name} value={image.name}>
+                          {image.name} · {image.region} {image.version}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <div className="profile-readiness">
+                  <Badge good={!!emulator?.profile?.ready}>
+                    {emulator?.profile?.ready
+                      ? 'Ready to play'
+                      : emulator?.profile?.bios.length
+                        ? 'Prepared automatically on first launch'
+                        : 'Import a valid BIOS to play'}
+                  </Badge>
                 </div>
               </section>
-              <section className="panel info-strip">
-                <span>
-                  <strong>Already have PCSX2?</strong>
-                  <br />
-                  Choose its executable and existing data folders in Settings.
-                </span>
-                <button className="text-button" onClick={() => setPage('Settings')}>
+              <div className="page-links">
+                <button className="text-button" onClick={() => goToSettings('Emulator')}>
                   Configure paths <ArrowRight size={16} />
                 </button>
-              </section>
-              <button className="text-button muted" onClick={() => void api?.openLink('pcsx2')}>
-                PCSX2 documentation <ExternalLink size={14} />
-              </button>
+                <button className="text-button muted" onClick={() => void api?.openLink('pcsx2')}>
+                  PCSX2 documentation <ExternalLink size={14} />
+                </button>
+              </div>
             </>
           )}
           {page === 'Cloud' && (
             <>
-              <PageHeading
-                eyebrow="YOUR COLLECTION, CONNECTED"
-                title="Cloud saves. More freedom."
-                description="Connect your own Dropbox. Keep your library and progress within reach."
-              />
+              <PageHeading title="Cloud" />
+              <label className="field cloud-provider-select">
+                <span>Cloud storage</span>
+                <select
+                  className="profile-select"
+                  value={provider}
+                  disabled={disabled || emulator?.running}
+                  onChange={(e) => void selectProvider(e.target.value as CloudProvider)}
+                >
+                  <option value="dropbox">Dropbox</option>
+                  <option value="mega">MEGA</option>
+                </select>
+                <small>
+                  Saved connections are kept. Switching selects storage; files transfer when syncing.
+                </small>
+              </label>
               <section className="panel provider-panel">
-                <div className="dropbox-logo" aria-hidden="true">
-                  ◇
-                </div>
                 <div className="provider-copy">
                   <div className="row">
-                    <h2>Dropbox</h2>
+                    <h2>{providerName}</h2>
                     <Badge good={connected}>{connected ? 'Connected' : 'Disconnected'}</Badge>
                   </div>
-                  <p>Secure OAuth connection through Rclone. No personal API keys needed.</p>
-                  <small>{snapshot?.cloud.version ?? 'Rclone needs to be installed'}</small>
+                  {!connected && (
+                    <p>
+                      {provider === 'mega'
+                        ? 'Sign in with your MEGA account below.'
+                        : 'Authorize Dropbox in your browser.'}
+                    </p>
+                  )}
+                  <small>Cloud connection is managed by the launcher.</small>
                 </div>
+                {provider === 'dropbox' && (
+                  <Button
+                    disabled={disabled || emulator?.running}
+                    onClick={() =>
+                      void act('Connecting Dropbox', () => api!.connectCloud(), 'Dropbox connected')
+                    }
+                  >
+                    <Cloud size={16} />
+                    {connected ? 'Reconnect' : 'Connect Dropbox'}
+                  </Button>
+                )}
+                {provider === 'mega' && connected && (
+                  <Button
+                    secondary
+                    disabled={disabled || emulator?.running}
+                    onClick={() => setChangeMegaAccount((value) => !value)}
+                  >
+                    {changeMegaAccount ? 'Cancel account change' : 'Change MEGA account'}
+                  </Button>
+                )}
+              </section>
+              {provider === 'mega' && (!connected || changeMegaAccount) && (
+                <form
+                  className="panel settings-panel mega-sign-in"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void connectMega();
+                  }}
+                >
+                  <h3>Connect MEGA</h3>
+                  <div className="field-grid">
+                    <label className="field">
+                      <span>MEGA email</span>
+                      <input
+                        type="email"
+                        className="profile-select"
+                        autoComplete="username"
+                        required
+                        value={megaEmail}
+                        disabled={disabled || emulator?.running}
+                        onChange={(e) => setMegaEmail(e.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>MEGA password</span>
+                      <input
+                        type="password"
+                        className="profile-select"
+                        autoComplete="off"
+                        required
+                        value={megaPassword}
+                        disabled={disabled || emulator?.running}
+                        onChange={(e) => setMegaPassword(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <label className="field">
+                    <span>MEGA two-factor code (optional)</span>
+                    <input
+                      className="profile-select"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      pattern="[0-9]{6}"
+                      maxLength={6}
+                      value={megaCode}
+                      disabled={disabled || emulator?.running}
+                      onChange={(e) => setMegaCode(e.target.value)}
+                    />
+                    <small>
+                      For two-factor accounts, enter a fresh code. A new launcher session may require sign-in
+                      again.
+                    </small>
+                  </label>
+                  <p>Account access is stored locally. A new MEGA account must first be opened at mega.nz.</p>
+                  <Button
+                    disabled={
+                      disabled ||
+                      emulator?.running ||
+                      !megaEmail.trim() ||
+                      !megaPassword ||
+                      (!!megaCode && !/^\d{6}$/.test(megaCode))
+                    }
+                  >
+                    <Cloud size={16} /> Connect MEGA
+                  </Button>
+                  {!!snapshot?.cloud.remotes.includes(snapshot.settings.remote) && !connected && (
+                    <button
+                      type="button"
+                      className="text-button"
+                      disabled={disabled || emulator?.running}
+                      onClick={() =>
+                        void act('Reconnecting MEGA', () => api!.connectCloud(), 'MEGA connected')
+                      }
+                    >
+                      Retry saved MEGA connection
+                    </button>
+                  )}
+                </form>
+              )}
+              <section className="panel sync-card">
+                <h3>Automatic save synchronization</h3>
+                <p>
+                  {snapshot?.settings.autoSyncSaves
+                    ? 'Saves merge before playing and after PCSX2 closes. Keep the launcher open while playing.'
+                    : 'Automatic synchronization is disabled in Settings.'}
+                </p>
+                <p>Conflicts ask which version to use. Replaced files remain in backups.</p>
                 <Button
-                  disabled={disabled || !snapshot?.cloud.installed}
+                  secondary
+                  disabled={disabled || !connected || emulator?.running}
                   onClick={() =>
-                    void act('Connecting Dropbox', () => api!.connectCloud(), 'Dropbox connected')
+                    void act('Synchronizing saves', () => api!.syncSaves(), 'Cloud saves synchronized', false)
                   }
                 >
-                  <Cloud size={16} />
-                  {connected ? 'Reconnect' : 'Connect Dropbox'}
+                  <RefreshCw size={15} /> Sync saves now
                 </Button>
               </section>
-              {!connected && (
-                <section className="panel setup-panel">
-                  <h3>Three steps to your private cloud</h3>
-                  <div className="setup-steps">
-                    <div>
-                      <b className={snapshot?.cloud.installed ? 'done' : ''}>
-                        {snapshot?.cloud.installed ? <Check size={16} /> : '1'}
-                      </b>
-                      <strong>Install Rclone</strong>
-                      <p>Download the official build, or select your own executable.</p>
-                      <Button
-                        secondary
-                        disabled={disabled}
-                        onClick={() =>
-                          void act('Installing Rclone', () => api!.installRclone(), 'Rclone installed', false)
-                        }
-                      >
-                        <ArrowDownToLine size={15} />{' '}
-                        {snapshot?.cloud.installed ? 'Reinstall Rclone' : 'Install Rclone'}
-                      </Button>
-                    </div>
-                    <div>
-                      <b>2</b>
-                      <strong>Authorize Dropbox</strong>
-                      <p>
-                        Click Connect Dropbox and approve access in your browser. Credentials stay in your
-                        local Rclone configuration.
-                      </p>
-                    </div>
-                    <div>
-                      <b>3</b>
-                      <strong>Choose what moves</strong>
-                      <p>
-                        Review each transfer. Existing files are backed up before replacement. Missing local
-                        files never delete cloud files.
-                      </p>
-                    </div>
-                  </div>
-                </section>
-              )}
               <div className="section-heading">
                 <div>
-                  <div className="eyebrow muted">MANUAL SYNC</div>
-                  <h2>Keep your progress close</h2>
+                  <h2>Save synchronization</h2>
                 </div>
                 <button
                   className="text-button"
@@ -742,7 +767,7 @@ export default function App() {
                       kind: 'Memcards',
                       title: 'Memory cards',
                       icon: HardDrive,
-                      description: 'Your in-game saves, just like the original console.',
+                      description: 'In-game saves.',
                       local: snapshot?.settings.memcardsDirectory,
                       upload: 'Upload Memory Cards',
                       download: 'Download Memory Cards',
@@ -751,7 +776,7 @@ export default function App() {
                       kind: 'SaveStates',
                       title: 'Save states',
                       icon: Layers3,
-                      description: 'Your exact moments. Use the same PCSX2 version across devices.',
+                      description: 'Use the same PCSX2 version across devices.',
                       local: snapshot?.settings.saveStatesDirectory,
                       upload: 'Upload Save States',
                       download: 'Download Save States',
@@ -794,33 +819,33 @@ export default function App() {
                   Close PCSX2 before synchronizing saves. Use Check connection afterward to refresh status.
                 </div>
               )}
-              <section className="panel info-strip">
-                <div>
-                  <strong>Disc images live in their own folder.</strong>
-                  <p>Upload and download individual games from your library.</p>
-                </div>
-                <button className="text-button" onClick={() => setPage('Games')}>
-                  Open library <ArrowRight size={16} />
-                </button>
-              </section>
               <div className="cloud-location">
                 <FolderOpen size={16} />{' '}
-                {snapshot ? `${snapshot.settings.remote}:${snapshot.settings.cloudRoot || ''}/` : 'Dropbox'}
+                {snapshot
+                  ? `${snapshot.settings.remote}:${snapshot.settings.cloudRoot || ''}/`
+                  : providerName}
                 <span>Games / Memcards / SaveStates</span>
               </div>
-              <button className="text-button muted" onClick={() => void api?.openLink('rclone')}>
-                Rclone installation help <ExternalLink size={14} />
-              </button>
+              <div className="page-links">
+                <button className="text-button" onClick={() => goToSettings('Cloud')}>
+                  Configure cloud <ArrowRight size={16} />
+                </button>
+                <button className="text-button muted" onClick={() => void api?.openLink(provider)}>
+                  {providerName} connection help <ExternalLink size={14} />
+                </button>
+                <button
+                  className="text-button muted"
+                  onClick={() => void api?.openTransferLogs().catch((e) => setError(e.message))}
+                >
+                  Open transfer logs <FolderOpen size={14} />
+                </button>
+              </div>
             </>
           )}
           {page === 'Settings' && (
             <>
               <div className="settings-heading">
-                <PageHeading
-                  eyebrow="MAKE IT YOURS"
-                  title="Settings"
-                  description="Local paths, cloud preferences, and the way you play."
-                />
+                <PageHeading title="Settings" />
                 <Button
                   disabled={disabled || !settingsChanged}
                   onClick={() =>
@@ -830,174 +855,233 @@ export default function App() {
                   <Check size={17} /> Save changes
                 </Button>
               </div>
-              {settingsChanged && (
-                <div className="unsaved">
-                  Unsaved changes. Save before scanning, connecting, or transferring files.
-                </div>
-              )}
-              <section className="panel settings-panel">
-                <div className="settings-section-title">
-                  <FolderOpen size={20} />
-                  <div>
-                    <h3>Game library</h3>
-                    <p>
-                      Scan folders recursively for .iso and .chd files. Filename identifies each cloud game.
-                    </p>
-                  </div>
-                </div>
-                <div className="directory-list">
-                  {draft?.gameDirectories.map((directory) => (
-                    <div key={directory}>
-                      <FolderOpen size={17} />
-                      <code>{directory}</code>
-                      <button
-                        className="icon-button"
-                        aria-label={`Remove ${directory}`}
-                        disabled={disabled}
-                        onClick={() =>
-                          update(
-                            'gameDirectories',
-                            draft.gameDirectories.filter((p) => p !== directory),
-                          )
-                        }
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <Button
-                  secondary
-                  disabled={disabled}
-                  onClick={() => void addDirectory().catch((e) => setError(e.message))}
-                >
-                  <Plus size={16} /> Add game directory
-                </Button>
-                {settingField(
-                  'Game download directory',
-                  'downloadDirectory',
-                  'Cloud downloads are saved here. This folder is scanned automatically.',
-                  'directory',
-                )}
-              </section>
-              <section className="panel settings-panel">
-                <div className="settings-section-title">
-                  <MonitorDown size={20} />
-                  <div>
-                    <h3>PCSX2 & local data</h3>
-                    <p>
-                      Paths must be absolute. PCSX2 stores its profile in the PCSX2 subfolder of this data
-                      parent.
-                    </p>
-                  </div>
-                </div>
-                {settingField(
-                  'PCSX2 executable',
-                  'pcsx2Path',
-                  'Leave empty for automatic detection. Select .exe on Windows or AppImage / executable on Linux.',
-                  'executable',
-                )}
-                {settingField(
-                  'Emulator installation directory',
-                  'emulatorRoot',
-                  'New managed versions install here. Changing this path does not move existing data.',
-                  'directory',
-                )}
-                {settingField(
-                  'PCSX2 data parent directory',
-                  'dataDirectory',
-                  'PCSX2 creates a PCSX2 subfolder here. Existing settings and save folders are preserved; folders below remain independent.',
-                  'directory',
-                )}
-                <div className="field-grid">
-                  {settingField(
-                    'BIOS directory',
-                    'biosDirectory',
-                    'Your own console BIOS files.',
-                    'directory',
-                  )}
-                  {settingField(
-                    'Memory card directory',
-                    'memcardsDirectory',
-                    'PCSX2 memory cards and cloud Memcards source.',
-                    'directory',
-                  )}
-                  {settingField(
-                    'Save state directory',
-                    'saveStatesDirectory',
-                    'PCSX2 save states and cloud SaveStates source.',
-                    'directory',
-                  )}
-                </div>
-                <label className="toggle-field">
-                  <div>
-                    <strong>Launch games in fullscreen</strong>
-                    <small>Open PCSX2 directly into the game.</small>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={draft?.fullscreen ?? true}
-                    disabled={disabled}
-                    onChange={(e) => update('fullscreen', e.target.checked)}
-                  />
-                </label>
-              </section>
-              <section className="panel settings-panel">
-                <div className="settings-section-title">
-                  <Cloud size={20} />
-                  <div>
-                    <h3>Rclone & Dropbox</h3>
-                    <p>Tokens stay in the local Rclone configuration. Never add that file to Git.</p>
-                  </div>
-                </div>
-                {settingField(
-                  'Rclone executable',
-                  'rclonePath',
-                  'Use rclone for PATH detection, or choose its absolute executable path.',
-                  'executable',
-                )}
-                {settingField(
-                  'Rclone configuration file',
-                  'rcloneConfig',
-                  'Use a dedicated configuration, or enter the path to your existing rclone.conf. Tokens are never shown here.',
-                )}
-                <div className="field-grid">
-                  {settingField(
-                    'Dropbox remote name',
-                    'remote',
-                    'An existing Dropbox remote or a new name for the connection wizard.',
-                  )}
-                  {settingField(
-                    'Dropbox root folder',
-                    'cloudRoot',
-                    'Relative folder inside Dropbox. Leave empty to use the account root.',
-                  )}
-                </div>
-                {!!snapshot?.cloud.remotes.length && (
-                  <div className="remote-list">Available remotes: {snapshot.cloud.remotes.join(', ')}</div>
-                )}
-              </section>
-              <div className="settings-footer">
-                <span>Preferences stay on this device.</span>
-                <Button
-                  disabled={disabled || !settingsChanged}
-                  onClick={() =>
-                    void act('Saving preferences', () => api!.saveSettings(draft!), 'Preferences saved')
-                  }
-                >
-                  <Check size={16} /> Save changes
-                </Button>
+              <div className="settings-tabs" role="tablist" aria-label="Settings categories">
+                {settingsTabs.map((tab, index) => (
+                  <button
+                    key={tab}
+                    role="tab"
+                    id={`settings-tab-${tab}`}
+                    aria-selected={settingsTab === tab}
+                    aria-controls={`settings-panel-${tab}`}
+                    tabIndex={settingsTab === tab ? 0 : -1}
+                    onClick={() => setSettingsTab(tab)}
+                    onKeyDown={(event) => {
+                      const next =
+                        event.key === 'ArrowRight'
+                          ? (index + 1) % settingsTabs.length
+                          : event.key === 'ArrowLeft'
+                            ? (index + settingsTabs.length - 1) % settingsTabs.length
+                            : event.key === 'Home'
+                              ? 0
+                              : event.key === 'End'
+                                ? settingsTabs.length - 1
+                                : undefined;
+                      if (next !== undefined) {
+                        event.preventDefault();
+                        setSettingsTab(settingsTabs[next]);
+                        document.getElementById(`settings-tab-${settingsTabs[next]}`)?.focus();
+                      }
+                    }}
+                  >
+                    {tab}
+                  </button>
+                ))}
               </div>
+              {settingsChanged && <div className="unsaved">Unsaved changes.</div>}
+              {settingsTab === 'Games' && (
+                <section
+                  className="panel settings-panel"
+                  role="tabpanel"
+                  id="settings-panel-Games"
+                  aria-labelledby="settings-tab-Games"
+                  tabIndex={0}
+                >
+                  <div className="settings-section-title">
+                    <FolderOpen size={20} />
+                    <div>
+                      <h3>Game library</h3>
+                      <p>
+                        Scan folders recursively for .iso and .chd files. Filename identifies each cloud game.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="directory-list">
+                    {draft?.gameDirectories.map((directory) => (
+                      <div key={directory}>
+                        <FolderOpen size={17} />
+                        <code>{directory}</code>
+                        <button
+                          className="icon-button"
+                          aria-label={`Remove ${directory}`}
+                          disabled={disabled}
+                          onClick={() =>
+                            update(
+                              'gameDirectories',
+                              draft.gameDirectories.filter((p) => p !== directory),
+                            )
+                          }
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    secondary
+                    disabled={disabled}
+                    onClick={() => void addDirectory().catch((e) => setError(e.message))}
+                  >
+                    <Plus size={16} /> Add game directory
+                  </Button>
+                  {settingField(
+                    'Game download directory',
+                    'downloadDirectory',
+                    'Cloud downloads are saved here. This folder is scanned automatically.',
+                    'directory',
+                  )}
+                </section>
+              )}
+              {settingsTab === 'Emulator' && (
+                <section
+                  className="panel settings-panel"
+                  role="tabpanel"
+                  id="settings-panel-Emulator"
+                  aria-labelledby="settings-tab-Emulator"
+                  tabIndex={0}
+                >
+                  <div className="settings-section-title">
+                    <MonitorDown size={20} />
+                    <div>
+                      <h3>PCSX2 & local data</h3>
+                      <p>
+                        Paths must be absolute. PCSX2 stores its profile in the PCSX2 subfolder of this data
+                        parent.
+                      </p>
+                    </div>
+                  </div>
+                  {settingField(
+                    'PCSX2 executable',
+                    'pcsx2Path',
+                    'Leave empty for automatic detection. Select .exe on Windows or AppImage / executable on Linux.',
+                    'executable',
+                  )}
+                  {settingField(
+                    'Emulator installation directory',
+                    'emulatorRoot',
+                    'New managed versions install here. Changing this path does not move existing data.',
+                    'directory',
+                  )}
+                  {settingField(
+                    'PCSX2 data parent directory',
+                    'dataDirectory',
+                    'PCSX2 creates a PCSX2 subfolder here. Existing settings and save folders are preserved; folders below remain independent.',
+                    'directory',
+                  )}
+                  <div className="field-grid">
+                    {settingField(
+                      'BIOS directory',
+                      'biosDirectory',
+                      'Your own console BIOS files.',
+                      'directory',
+                    )}
+                    {settingField(
+                      'Memory card directory',
+                      'memcardsDirectory',
+                      'PCSX2 memory cards and cloud Memcards source.',
+                      'directory',
+                    )}
+                    {settingField(
+                      'Save state directory',
+                      'saveStatesDirectory',
+                      'PCSX2 save states and cloud SaveStates source.',
+                      'directory',
+                    )}
+                  </div>
+                  <label className="toggle-field">
+                    <div>
+                      <strong>Launch games in fullscreen</strong>
+                      <small>Open PCSX2 directly into the game.</small>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={draft?.fullscreen ?? true}
+                      disabled={disabled}
+                      onChange={(e) => update('fullscreen', e.target.checked)}
+                    />
+                  </label>
+                </section>
+              )}
+              {settingsTab === 'Cloud' && (
+                <section
+                  className="panel settings-panel"
+                  role="tabpanel"
+                  id="settings-panel-Cloud"
+                  aria-labelledby="settings-tab-Cloud"
+                  tabIndex={0}
+                >
+                  <div className="settings-section-title">
+                    <Cloud size={20} />
+                    <div>
+                      <h3>{providerName}</h3>
+                      <p>Connect your account from Cloud. The launcher includes the cloud component.</p>
+                    </div>
+                  </div>
+                  <label className="toggle-field">
+                    <span>Automatically sync saves before and after playing</span>
+                    <input
+                      type="checkbox"
+                      checked={draft?.autoSyncSaves ?? true}
+                      disabled={disabled}
+                      onChange={(e) => update('autoSyncSaves', e.target.checked)}
+                    />
+                  </label>
+                  {settingField(
+                    `${providerName} root folder`,
+                    'cloudRoot',
+                    `Folder for games and saves inside your ${providerName}.`,
+                  )}
+                  <details>
+                    <summary>Advanced cloud settings</summary>
+                    {settingField(
+                      'Rclone executable',
+                      'rclonePath',
+                      'Use rclone for PATH detection, or choose its absolute executable path.',
+                      'executable',
+                    )}
+                    {settingField(
+                      'Rclone configuration file',
+                      'rcloneConfig',
+                      'Use a dedicated configuration, or enter the path to your existing rclone.conf. Tokens are never shown here.',
+                    )}
+                    <div className="field-grid">
+                      {settingField(
+                        `${providerName} remote name`,
+                        'remote',
+                        `An existing ${providerName} remote or a new name for the connection.`,
+                      )}
+                    </div>
+                    {!!snapshot?.cloud.remotes.length && (
+                      <div className="remote-list">
+                        Available remotes: {snapshot.cloud.remotes.join(', ')}
+                      </div>
+                    )}
+                  </details>
+                </section>
+              )}
             </>
           )}
         </main>
         {(busy || progress) && (
           <div className="operation-bar" role="status">
             <div className="operation-symbol">
-              {busy ? <LoaderCircle size={19} className="spin" /> : <CheckCircle2 size={19} />}
+              {busy || saveSyncRunning ? (
+                <LoaderCircle size={19} className="spin" />
+              ) : (
+                <CheckCircle2 size={19} />
+              )}
             </div>
             <div className="operation-detail">
-              <strong>{busy || 'Activity'}</strong>
+              <strong>{busy || (saveSyncRunning ? 'Synchronizing saves' : 'Activity')}</strong>
               <span>{progress?.message ?? 'Please wait…'}</span>
               {progress?.percent !== undefined && (
                 <div className="progress-track">
@@ -1009,7 +1093,8 @@ export default function App() {
               {progress?.bytes !== undefined
                 ? `${size(progress.bytes)}${progress.totalBytes ? ` / ${size(progress.totalBytes)}` : ''}`
                 : ''}
-              {progress?.speed ? ` · ${size(progress.speed)}/s` : ''}
+              {progress?.speed !== undefined ? ` · ${transferRate(progress.speed)}` : ''}
+              {progress?.averageSpeed !== undefined ? ` · avg ${transferRate(progress.averageSpeed)}` : ''}
             </small>
             {!busy && (
               <button
@@ -1050,7 +1135,7 @@ export default function App() {
             </div>
             <div className="eyebrow muted">REVIEW TRANSFER</div>
             <h2 id="transfer-title">
-              {plan.direction === 'upload' ? 'Upload to Dropbox' : 'Download to this device'}
+              {plan.direction === 'upload' ? `Upload to ${providerName}` : 'Download to this device'}
             </h2>
             <p>
               {plan.files.length} file{plan.files.length !== 1 ? 's' : ''} · {size(plan.bytes)} · {plan.kind}
@@ -1125,20 +1210,10 @@ export default function App() {
   );
 }
 
-function PageHeading({
-  eyebrow,
-  title,
-  description,
-}: {
-  eyebrow: string;
-  title: string;
-  description: string;
-}) {
+function PageHeading({ title }: { title: string }) {
   return (
     <div className="page-heading">
-      <div className="eyebrow muted">{eyebrow}</div>
       <h1>{title}</h1>
-      <p>{description}</p>
     </div>
   );
 }
@@ -1172,7 +1247,6 @@ function GameCard({
             <div className="cover-console">PLAYSTATION 2</div>
             <Disc3 size={56} />
             <strong>{game.title}</strong>
-            <span>PERSONAL COLLECTION</span>
           </div>
         )}
         <div className="cover-overlay">
@@ -1226,7 +1300,7 @@ function GameCard({
             </button>
           )}
           {game.state === 'In Cloud' && (
-            <span className="cloud-check" title="Available locally and in Dropbox">
+            <span className="cloud-check" title="Available locally and in cloud storage">
               <CheckCircle2 size={16} />
             </span>
           )}

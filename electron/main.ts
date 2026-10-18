@@ -9,6 +9,7 @@ import { PCSX2Service } from './services/pcsx2';
 import { RcloneService } from './services/rclone';
 import { GameService } from './services/games';
 import { SyncService } from './services/sync';
+import { AutoSyncService, SyncCancelled } from './services/auto-sync';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'launcher-cover', privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -48,13 +49,63 @@ async function start() {
   const emit = (progress: Progress) => {
     if (window && !window.isDestroyed()) window.webContents.send('progress', progress);
   };
-  const pcsx2 = new PCSX2Service(store, emit),
-    rclone = new RcloneService(store, emit);
+  const pcsx2 = new PCSX2Service(store, emit, () => {
+      if (store.value.autoSyncSaves && sessionCloud) {
+        // Exit callbacks cannot reject into the process event loop.
+        void exclusive(() => autoSync.synchronize()).catch((error) => {
+          emit({ operation: 'auto-sync', message: `Cloud saves pending: ${error.message}` });
+          if (window && !(error instanceof SyncCancelled))
+            void dialog.showMessageBox(window, {
+              type: 'warning',
+              message: 'Cloud saves have not synchronized.',
+              detail: `${error.message}\nLocal saves remain on this device. Retry from Cloud before playing on another device.`,
+            });
+        });
+      }
+    }),
+    rclone = new RcloneService(
+      store,
+      emit,
+      app.isPackaged
+        ? path.join(process.resourcesPath, 'cloud', process.platform === 'win32' ? 'rclone.exe' : 'rclone')
+        : path.join(
+            app.getAppPath(),
+            'tools',
+            'bundled-rclone',
+            process.platform,
+            process.platform === 'win32' ? 'rclone.exe' : 'rclone',
+          ),
+    );
   const games = new GameService(store, rclone),
     sync = new SyncService(store, rclone, games, pcsx2, emit);
+  const autoSync = new AutoSyncService(
+    store,
+    rclone,
+    emit,
+    async (conflicts) => {
+      const result = await dialog.showMessageBox(window!, {
+        type: 'question',
+        title: 'Save conflicts',
+        message: `${conflicts.length} save file(s) changed on both devices.`,
+        detail: `${conflicts
+          .slice(0, 15)
+          .map((f) => `${f.kind}/${f.path}`)
+          .join(
+            '\n',
+          )}\n\nChoose which version to use for these conflicts. Other saves merge automatically. Replaced versions remain in backups.`,
+        buttons: ['Cancel', 'Use local saves', 'Use cloud saves'],
+        defaultId: 0,
+        cancelId: 0,
+      });
+      return result.response === 1 ? 'upload' : result.response === 2 ? 'download' : undefined;
+    },
+    () => pcsx2.running,
+  );
+  let sessionCloud = false;
   let modifying = false;
   const exclusive = async <T>(action: () => Promise<T>): Promise<T> => {
-    if (modifying || sync.busy) throw new Error('Another operation is in progress. Please wait.');
+    if (modifying || sync.busy || autoSync.busy)
+      throw new Error('Another operation is in progress. Please wait.');
     modifying = true;
     try {
       return await action();
@@ -107,6 +158,8 @@ async function start() {
   handle('settings:save', (input) =>
     exclusive(async () => {
       if (pcsx2.running) throw new Error('Close PCSX2 before changing paths.');
+      if (input?.cloudProvider !== undefined && input.cloudProvider !== store.value.cloudProvider)
+        throw new Error('Use the Cloud storage selector to switch providers.');
       const result = await store.save(input);
       games.games.clear();
       return result;
@@ -123,6 +176,32 @@ async function start() {
     exclusive(async () => {
       const game = gameId === undefined ? undefined : games.get(id.parse(gameId));
       if (game && !game.localPath) throw new Error('Download this game before playing.');
+      if (pcsx2.running) throw new Error('PCSX2 is already running.');
+      sessionCloud = false;
+      if (game && store.value.autoSyncSaves) {
+        // Prepare first: profile migration may select existing populated save folders.
+        await pcsx2.prepare();
+        const cloud = await rclone.status();
+        // A never-connected installation remains fully local without repeated prompts.
+        if (cloud.remotes.includes(store.value.remote)) {
+          sessionCloud = true;
+          try {
+            if (!cloud.connected) throw new Error(cloud.error ?? 'Cloud is unavailable.');
+            await autoSync.synchronize();
+          } catch (error) {
+            if (error instanceof SyncCancelled) throw error;
+            const result = await dialog.showMessageBox(window!, {
+              type: 'warning',
+              message: 'Cloud saves could not synchronize.',
+              detail: `${(error as Error).message}\nPlaying offline may create conflicts on another device. Local saves remain available.`,
+              buttons: ['Cancel', 'Play offline'],
+              defaultId: 0,
+              cancelId: 0,
+            });
+            if (result.response !== 1) throw error;
+          }
+        }
+      }
       await pcsx2.launch(game?.localPath);
     }),
   );
@@ -144,7 +223,40 @@ async function start() {
     }),
   );
   handle('rclone:install', () => exclusive(() => rclone.install()));
-  handle('cloud:connect', () => exclusive(() => rclone.connect()));
+  handle('cloud:connect', (input) =>
+    exclusive(() => {
+      if (pcsx2.running) throw new Error('Close PCSX2 before changing cloud connections.');
+      const credentials = z
+        .object({
+          email: z.string().trim().email().max(320),
+          password: z.string().min(1).max(4096),
+          code: z
+            .string()
+            .regex(/^\d{6}$/)
+            .optional(),
+        })
+        .strict()
+        .optional()
+        .parse(input);
+      return rclone.connect(credentials);
+    }),
+  );
+  handle('cloud:select', (input) =>
+    exclusive(async () => {
+      if (pcsx2.running) throw new Error('Close PCSX2 before switching cloud storage.');
+      const provider = z.enum(['dropbox', 'mega']).parse(input);
+      const settings = await store.selectCloudProvider(provider);
+      rclone.dispose();
+      games.games.clear();
+      return settings;
+    }),
+  );
+  app.on('will-quit', () => rclone.dispose());
+  handle('saves:sync', () => exclusive(() => autoSync.synchronize()));
+  handle('transfers:logs', async () => {
+    const error = await shell.openPath(await rclone.transferLogDirectory());
+    if (error) throw new Error('Could not open transfer logs.');
+  });
   handle('sync:plan', (request) =>
     exclusive(() =>
       sync.plan(
@@ -169,7 +281,8 @@ async function start() {
         pcsx2: 'https://pcsx2.net/docs/setup/',
         rclone: 'https://rclone.org/install/',
         dropbox: 'https://rclone.org/dropbox/',
-      }[z.enum(['pcsx2', 'rclone', 'dropbox']).parse(link)],
+        mega: 'https://rclone.org/mega/',
+      }[z.enum(['pcsx2', 'rclone', 'dropbox', 'mega']).parse(link)],
     ),
   );
   protocol.handle('launcher-cover', (request) => {
@@ -206,11 +319,18 @@ async function start() {
     if (devUrl) void window.loadURL(devUrl);
     else void window.loadFile(rendererFile);
     window.on('close', (event) => {
-      if (modifying || sync.busy) {
+      if (
+        modifying ||
+        sync.busy ||
+        autoSync.busy ||
+        (pcsx2.running && sessionCloud && store.value.autoSyncSaves)
+      ) {
         event.preventDefault();
         void dialog.showMessageBox(window!, {
           type: 'info',
-          message: 'Wait for the current operation to finish before closing the launcher.',
+          message: pcsx2.running
+            ? 'Close PCSX2 first so the launcher can synchronize your saves.'
+            : 'Wait for the current operation to finish before closing the launcher.',
         });
       }
     });
