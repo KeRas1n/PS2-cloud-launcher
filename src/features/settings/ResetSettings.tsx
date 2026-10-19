@@ -44,8 +44,8 @@ export function ResetSettings() {
         </div>
       </div>
       <p>
-        Games, BIOS, memory cards, save states, backups, PCSX2 and its settings are kept. Their folder paths
-        remain configured.
+        Games, BIOS, memory cards, save states, backups, PCSX2 and its settings stay on disk. All custom file
+        and folder paths are cleared. The launcher returns to its own default folders.
       </p>
       <p>
         Cloud files and custom external Rclone configurations are kept. You will need to connect your cloud
@@ -70,7 +70,8 @@ export function ResetSettings() {
           <h2 id="reset-launcher-title">Delete all launcher data?</h2>
           <p>
             This permanently removes saved cloud connections, launcher preferences, covers, logs and
-            synchronization history. Unsaved preference changes are discarded.
+            synchronization history, including all custom file and folder paths. Unsaved preference changes
+            are discarded.
           </p>
           <p>
             Games, BIOS, saves, backups and PCSX2 files and settings remain on this device. Nothing is deleted

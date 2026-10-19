@@ -50,9 +50,8 @@ async function fixture() {
 }
 
 describe('launcher data reset', () => {
-  it('removes launcher accounts and metadata while retaining games, saves, BIOS, PCSX2, backups and their paths', async () => {
+  it('removes launcher accounts and metadata while retaining files and restoring default paths', async () => {
     const f = await fixture();
-    const previous = structuredClone(f.store.value);
     const contents = await Promise.all(f.kept.map((file) => fs.readFile(file)));
     const targets = await prepareLauncherReset(f.userData, f.store.value);
     await deleteLauncherData(f.store, targets);
@@ -68,7 +67,7 @@ describe('launcher data reset', () => {
       'memcardsDirectory',
       'saveStatesDirectory',
     ] as const)
-      expect(f.store.value[key]).toEqual(previous[key]);
+      expect(f.store.value[key]).toEqual(f.store.defaults[key]);
     expect(f.store.value).toMatchObject({
       cloudProvider: 'mega',
       remote: 'ps2-mega',
@@ -79,6 +78,33 @@ describe('launcher data reset', () => {
     const reloaded = new SettingsStore(f.userData, f.root);
     await reloaded.load();
     expect(reloaded.value).toEqual(f.store.value);
+  });
+
+  it('forgets all external paths and does not restore them on reload', async () => {
+    const f = await fixture();
+    const external = path.join(f.root, 'external');
+    const paths = {
+      gameDirectories: [path.join(external, 'games')],
+      downloadDirectory: path.join(external, 'downloads'),
+      emulatorRoot: path.join(external, 'emulator'),
+      pcsx2Path: path.join(external, 'pcsx2.exe'),
+      dataDirectory: path.join(external, 'data'),
+      biosDirectory: path.join(external, 'bios'),
+      memcardsDirectory: path.join(external, 'cards'),
+      saveStatesDirectory: path.join(external, 'states'),
+      rclonePath: path.join(external, 'rclone.exe'),
+      rcloneConfig: path.join(external, 'rclone.conf'),
+    };
+    await fs.mkdir(paths.biosDirectory, { recursive: true });
+    const bios = path.join(paths.biosDirectory, 'console.bin');
+    await fs.writeFile(bios, 'external BIOS');
+    await f.store.save({ ...f.store.value, ...paths });
+    await deleteLauncherData(f.store, await prepareLauncherReset(f.userData, f.store.value));
+    expect(f.store.value).toEqual(f.store.defaults);
+    const reloaded = new SettingsStore(f.userData, f.root);
+    await reloaded.load();
+    expect(reloaded.value).toEqual(f.store.defaults);
+    expect(await fs.readFile(bios, 'utf8')).toBe('external BIOS');
   });
 
   it('keeps custom external Rclone configuration files', async () => {

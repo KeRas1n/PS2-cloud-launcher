@@ -66,6 +66,25 @@ describe('path and configuration safety', () => {
   });
 });
 describe('PCSX2 release and data handling', () => {
+  it('does not discover an unrelated emulator from PATH or ProgramFiles', async () => {
+    const root = await temp();
+    const store = new SettingsStore(path.join(root, 'user'), root);
+    await store.load();
+    const external = path.join(root, 'external');
+    await fs.mkdir(path.join(external, 'PCSX2'), { recursive: true });
+    await fs.writeFile(
+      path.join(external, process.platform === 'win32' ? 'pcsx2-qt.exe' : 'pcsx2-qt'),
+      'fixture',
+    );
+    await fs.writeFile(path.join(external, 'PCSX2', 'pcsx2-qt.exe'), 'fixture');
+    vi.stubEnv('PATH', external);
+    vi.stubEnv('ProgramFiles', external);
+    try {
+      expect((await new PCSX2Service(store, () => {}).status()).installed).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   const release = {
     tag_name: 'v2.8.2',
     prerelease: false,

@@ -124,6 +124,34 @@ it('preserves save paths populated by the old setup wizard without moving files'
   expect(store.value.saveStatesDirectory).toBe(oldStates);
   expect(await fs.readFile(path.join(oldCards, 'user-save'), 'utf8')).toBe('keep');
 });
+it('does not adopt BIOS from an old profile and clears stale BIOS selection', async () => {
+  const { service, store, root } = await fixture();
+  const external = path.join(root, 'external-bios');
+  await fs.mkdir(external);
+  await fs.writeFile(path.join(external, 'console.bin'), biosFixture());
+  const iniFile = path.join(store.value.dataDirectory, 'PCSX2', 'inis', 'PCSX2.ini');
+  await fs.mkdir(path.dirname(iniFile), { recursive: true });
+  await fs.writeFile(iniFile, `${defaults}\n[Filenames]\nBIOS = console.bin\n`);
+  await fs.writeFile(iniFile, writeIni(await fs.readFile(iniFile, 'utf8'), 'Folders', { Bios: external }));
+  const profile = await service.prepare(process.execPath);
+  expect(store.value.biosDirectory).toBe(store.defaults.biosDirectory);
+  expect(profile.bios).toEqual([]);
+  expect(profile.ready).toBe(false);
+  expect(readIni(await fs.readFile(iniFile, 'utf8'), 'Filenames', 'BIOS')).toBe('');
+});
+it('copies BIOS into launcher storage even when an external lookup directory is configured', async () => {
+  const { service, store, root } = await fixture();
+  const external = path.join(root, 'external-bios');
+  await fs.mkdir(external);
+  const source = path.join(external, 'console.bin');
+  await fs.writeFile(source, biosFixture());
+  await store.save({ ...store.value, biosDirectory: external });
+  await service.importBios(source);
+  expect(store.value.biosDirectory).toBe(store.defaults.biosDirectory);
+  await fs.unlink(source);
+  expect(await fs.readFile(path.join(store.value.biosDirectory, 'console.bin'))).toEqual(biosFixture());
+  expect((await service.prepare(process.execPath, true)).ready).toBe(true);
+});
 it('keeps explicitly configured populated save directories', async () => {
   const { service, store } = await fixture();
   await fs.mkdir(store.value.memcardsDirectory, { recursive: true });

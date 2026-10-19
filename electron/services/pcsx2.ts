@@ -73,16 +73,7 @@ export class PCSX2Service {
   async status(): Promise<EmulatorStatus> {
     const s = this.store.value,
       installed = await this.manifest();
-    const candidates = [
-      s.pcsx2Path,
-      installed?.path,
-      ...(process.env.PATH ?? '')
-        .split(path.delimiter)
-        .map((p) => path.join(p, process.platform === 'win32' ? 'pcsx2-qt.exe' : 'pcsx2-qt')),
-      process.platform === 'win32'
-        ? path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'PCSX2', 'pcsx2-qt.exe')
-        : '/usr/bin/pcsx2',
-    ];
+    const candidates = [s.pcsx2Path, installed?.path];
     for (const candidate of candidates) {
       if (candidate && (await exists(candidate))) {
         let version = candidate === installed?.path ? installed.version : undefined;

@@ -12,7 +12,7 @@ const path = require('node:path');
     Buffer.alloc(8 * 1024 * 1024),
   );
   const desktop = await electron.launch({
-    args: ['.'],
+    args: ['--no-sandbox', '--disable-gpu', '.'],
     env: { ...process.env, PS2_LAUNCHER_SMOKE: '1', VITE_DEV_SERVER_URL: '', RCLONE_BWLIMIT: '1M' },
   });
   try {
@@ -133,14 +133,13 @@ const path = require('node:path');
     await page.getByRole('button', { name: 'Delete data and reload', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Game library' })).toBeVisible({ timeout: 30000 });
     await expect(page.getByText('Checking emulator and cloud connection…')).toBeHidden();
-    await expect(page.getByRole('heading', { name: 'Local Fixture', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Local Fixture', exact: true })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Downloaded Fixture', exact: true })).toBeVisible();
     for (const file of [...disposable, 'credentials/rclone.conf'])
       await expect(fs.access(path.join(userData, file))).rejects.toThrow();
     for (const [index, file] of kept.entries()) expect(await fs.readFile(file)).toEqual(originals[index]);
     const after = (await page.evaluate(() => window.launcher.snapshot())).settings;
     for (const key of [
-      'gameDirectories',
       'downloadDirectory',
       'emulatorRoot',
       'pcsx2Path',
@@ -150,6 +149,8 @@ const path = require('node:path');
       'saveStatesDirectory',
     ])
       expect(after[key]).toEqual(before[key]);
+    expect(after.gameDirectories).toEqual([]);
+    expect(after.pcsx2Path).toBe('');
     expect(after.remote).toBe('ps2-mega');
     expect(after.fullscreen).toBe(true);
     expect(await page.evaluate(() => localStorage.getItem('reset-fixture'))).toBeNull();
@@ -158,12 +159,25 @@ const path = require('node:path');
       8 * 1024 * 1024,
     );
     await page.screenshot({ path: path.join(root, 'after-reset.png'), fullPage: true });
+    await page.getByRole('navigation').getByRole('button', { name: 'Emulator', exact: true }).click();
+    await expect(page.getByText('Import a valid BIOS to play', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Import BIOS', exact: true })).toBeEnabled();
+    await expect(page.getByText('Selected BIOS', { exact: true })).toHaveCount(0);
+    await page.screenshot({ path: path.join(root, 'emulator-without-bios.png'), fullPage: true });
     expect(errors).toEqual([]);
     console.log(
       'Launcher reset UI passed: confirmation/Escape, transfer and emulator guards, local account/cache removal, renderer reload, empty transfer history, games/BIOS/saves/PCSX2/backups and cloud files preserved.',
     );
+  } catch (error) {
+    console.error(error);
+    throw error;
   } finally {
-    await desktop.close();
+    const timeout = setTimeout(() => desktop.process().kill(), 5000);
+    try {
+      await desktop.close();
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 })().catch((error) => {
   console.error(error);

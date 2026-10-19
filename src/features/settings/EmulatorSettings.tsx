@@ -23,7 +23,7 @@ export function EmulatorSettings() {
         label={'PCSX2 executable'}
         setting={'pcsx2Path'}
         help={
-          'Leave empty for automatic detection. Select .exe on Windows or AppImage / executable on Linux.'
+          'Leave empty to use the managed installation. Select .exe on Windows or AppImage / executable on Linux.'
         }
         kind={'executable'}
       />
@@ -45,7 +45,9 @@ export function EmulatorSettings() {
         <SettingsPathField
           label={'BIOS directory'}
           setting={'biosDirectory'}
-          help={'Your own console BIOS files.'}
+          help={
+            'BIOS lookup folder. Import BIOS always copies into the launcher’s own emulator/data/bios folder.'
+          }
           kind={'directory'}
         />
         <SettingsPathField

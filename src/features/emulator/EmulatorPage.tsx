@@ -63,8 +63,9 @@ export function EmulatorPage() {
         </div>
         <h3>BIOS</h3>
         <p>
-          Import an uncompressed BIOS from your PlayStation 2. MEGA backs it up and restores missing BIOS
-          files after sign-in. Transfers appear in Downloads.
+          Import an uncompressed BIOS from your PlayStation 2. The launcher copies it into its own BIOS
+          folder. MEGA backs it up and restores missing BIOS files after sign-in. Transfers appear in
+          Downloads.
         </p>
         <Button
           secondary

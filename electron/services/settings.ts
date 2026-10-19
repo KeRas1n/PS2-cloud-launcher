@@ -64,6 +64,7 @@ export const settingsSchema = z
 
 export class SettingsStore {
   value!: Settings;
+  defaults!: Settings;
   constructor(
     public readonly userData: string,
     private readonly launcherDir: string,
@@ -79,7 +80,7 @@ export class SettingsStore {
       root = path.join(this.userData, 'emulator');
     }
     const data = path.join(root, 'data');
-    this.value = {
+    this.defaults = {
       cloudProvider: 'mega',
       cloudProfiles: {},
       gameDirectories: [],
@@ -97,6 +98,7 @@ export class SettingsStore {
       fullscreen: true,
       autoSyncSaves: true,
     };
+    this.value = structuredClone(this.defaults);
     try {
       const saved = JSON.parse(await fs.readFile(path.join(this.userData, 'settings.json'), 'utf8'));
       // Retire unsupported providers without reusing their account or sync history.
@@ -124,18 +126,7 @@ export class SettingsStore {
     return settings;
   }
   async resetPreferences() {
-    // Retain discovery paths, including external installations and existing PCSX2 profiles.
-    return this.save({
-      ...this.value,
-      cloudProvider: 'mega',
-      cloudProfiles: {},
-      rclonePath: 'rclone',
-      rcloneConfig: path.join(this.userData, 'credentials', 'rclone.conf'),
-      remote: 'ps2-mega',
-      cloudRoot: 'PS2Cloud',
-      fullscreen: true,
-      autoSyncSaves: true,
-    });
+    return this.save(structuredClone(this.defaults));
   }
   private validate(input: unknown) {
     const settings = settingsSchema.parse(input);

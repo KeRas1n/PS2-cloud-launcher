@@ -76,9 +76,11 @@ export class PCSX2ProfileService {
     for (const [key, field, folder] of [
       ['MemoryCards', 'memcardsDirectory', 'memcards'],
       ['Savestates', 'saveStatesDirectory', 'sstates'],
-      ['Bios', 'biosDirectory', 'bios'],
     ] as const) {
       const previous = path.resolve(root, readIni(ini, 'Folders', key) || folder);
+      const relative = path.relative(root, previous);
+      // Legacy migration only discovers saves inside this managed profile.
+      if (path.isAbsolute(relative) || relative === '..' || relative.startsWith('..' + path.sep)) continue;
       const configured = original[field];
       if (
         path.resolve(configured) !== path.resolve(original.dataDirectory, folder) ||
@@ -127,7 +129,7 @@ export class PCSX2ProfileService {
     });
     configured = writeIni(configured, 'AutoUpdater', { CheckAtStartup: 'false' });
     configured = writeIni(configured, 'Logging', { EnableSystemConsole: 'false', EnableFileLogging: 'true' });
-    if (selected) configured = writeIni(configured, 'Filenames', { BIOS: selected });
+    configured = writeIni(configured, 'Filenames', { BIOS: selected ?? '' });
     await fs.mkdir(path.dirname(file), { recursive: true });
     for (const directory of [s.biosDirectory, s.memcardsDirectory, s.saveStatesDirectory])
       await fs.mkdir(directory, { recursive: true });
@@ -142,10 +144,13 @@ export class PCSX2ProfileService {
       throw new Error(
         'This file is not a valid PS2 BIOS image. Import an uncompressed BIOS dumped from your own console.',
       );
-    await fs.mkdir(this.store.value.biosDirectory, { recursive: true });
-    const destination = path.join(this.store.value.biosDirectory, path.basename(file));
+    const directory = this.store.defaults.biosDirectory;
+    await fs.mkdir(directory, { recursive: true });
+    const destination = path.join(directory, path.basename(file));
     if (path.resolve(file) !== path.resolve(destination))
       await fs.copyFile(file, destination, constants.COPYFILE_EXCL);
+    if (this.store.value.biosDirectory !== directory)
+      await this.store.save({ ...this.store.value, biosDirectory: directory });
     return path.basename(file);
   }
 }
