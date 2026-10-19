@@ -20,14 +20,14 @@ export function DeleteGameDialog() {
           </div>
           <button
             className="icon-button"
-            aria-label="Закрыть подтверждение удаления"
+            aria-label="Close delete confirmation"
             disabled={deleting}
             onClick={() => setDeletion(undefined)}
           >
             <X size={20} />
           </button>
         </div>
-        <h2 id="delete-game-title">Вы уверены, что хотите удалить игру?</h2>
+        <h2 id="delete-game-title">Are you sure you want to delete this game?</h2>
         <p className="delete-game-name">{deletion.title}</p>
         <p className="delete-game-path">{deletion.localPath}</p>
         <p
@@ -35,10 +35,10 @@ export function DeleteGameDialog() {
           className={deletion.cloud === 'stored' ? 'safe-note' : 'conflict-warning'}
         >
           {deletion.cloud === 'stored'
-            ? 'Игра находится в вашем облаке, так что вы в любой момент сможете её оттуда скачать.'
+            ? 'This game is backed up in the cloud. You can download it again anytime.'
             : deletion.cloud === 'missing'
-              ? 'Эта игра не сохранена в вашем облаке! Вы её потеряете навсегда!'
-              : 'Не удалось проверить копию игры в облаке. Если её там нет, после удаления вы потеряете игру навсегда!'}
+              ? 'This game is not backed up in the cloud. Deleting it will permanently remove your local copy!'
+              : 'Unable to verify whether this game is backed up in the cloud. You may permanently lose it if no backup exists!'}
         </p>
         {deletionError && (
           <p role="alert" className="delete-game-error">
@@ -47,11 +47,11 @@ export function DeleteGameDialog() {
         )}
         <div className="modal-actions">
           <Button secondary disabled={deleting} onClick={() => setDeletion(undefined)}>
-            Отменить
+            Cancel
           </Button>
           <Button className="danger" disabled={deleting} onClick={() => void confirmDelete()}>
             {deleting ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={16} />}{' '}
-            {deleting ? 'Удаление…' : 'Удалить'}
+            {deleting ? 'Deleting...' : 'Delete'}
           </Button>
         </div>
       </Dialog>
