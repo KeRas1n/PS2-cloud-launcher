@@ -12,7 +12,7 @@ the renderer calls only the typed preload bridge in `shared/types.ts`.
   operation state and notifications. `useLauncher()` exposes the typed context.
 - `src/features/games`: library view, cards and confirmed local deletion.
 - `src/features/emulator`: PCSX2 installation and BIOS controls.
-- `src/features/cloud`: provider selection, MEGA form and save synchronization controls.
+- `src/features/cloud`: MEGA sign-in form and save synchronization controls.
   Credentials remain local to the Cloud screen and clear on submission/provider change.
 - `src/features/settings`: settings tabs and the session-scoped preferences draft.
   Snapshot refreshes update untouched fields while retaining unsaved edits. Saving
@@ -61,7 +61,33 @@ npm run test:reset
 ```
 
 Smoke tests use an isolated Electron profile, generated fixtures and a local Rclone
-alias. They cover navigation, dirty settings across refreshes, provider switching,
+alias. They cover navigation, dirty settings across refreshes, MEGA sign-in,
 concurrent transfers, cancellation, cover rendering and responsive layout. The
 deletion UI check covers keyboard focus, confirmation, cloud retention and transfer
 guards. IPC unit tests cover trusted/untrusted senders and error normalization.
+
+## Cloud adapters
+
+Library discovery, save merging, transfer previews, staging and rollback depend on
+`CloudStorage` (`electron/services/cloud-storage.ts`). Its operations use normalized
+file metadata and named copy options; consumers never build Rclone commands.
+`MegaCloudStorage` implements this contract using the private Rclone transport.
+`cloud-storage-factory.ts` registers the available adapters; only MEGA is implemented.
+The runtime, IPC routes and background transfer workers use the selected adapter.
+Workers receive their own settings and credentials snapshot so later account changes
+cannot redirect accepted jobs. Cancellation stops copies; commit, rollback and unique
+staging cleanup finish independently of cancellation.
+
+To add a provider:
+
+1. Implement `CloudStorage`, including non-destructive copies, replacement backups,
+   normalized listings, progress, isolated transfer clients and safe cancellation.
+   A new adapter can use its own SDK; Rclone is not required by the contract.
+2. Add its credential type to `CloudCredentialsByProvider` in `shared/types.ts`
+   and register its factory in `cloud-storage-factory.ts`.
+3. Extend settings validation/migration and the connection form
+   for that provider. Validate credentials inside its adapter. Expose selection once multiple adapters are implemented.
+4. Run adapter contract checks and the existing sync/backup/cancellation suites.
+
+MEGA remains the default and sole cloud option. Local games and save paths are
+independent of provider implementation.

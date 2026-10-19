@@ -1,4 +1,5 @@
-// Real bundled Rclone, local aliases: staged commits, provider snapshots and cancellation.
+const { MegaCloudStorage } = require('../dist-electron/electron/services/mega-cloud-storage');
+// Real bundled Rclone, local aliases: staged commits, account snapshots and cancellation.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs/promises');
@@ -22,10 +23,7 @@ const { walk } = require('../dist-electron/electron/services/files');
     await store.load();
     base = new RcloneService(store, () => {}, binary);
     clients.push(base);
-    for (const [remote, folder] of [
-      ['ps2-dropbox', 'dropbox'],
-      ['ps2-mega', 'mega'],
-    ]) {
+    for (const [remote, folder] of [['ps2-mega', 'mega']]) {
       await fs.mkdir(path.join(root, folder), { recursive: true });
       await base.call([
         'config',
@@ -40,14 +38,13 @@ const { walk } = require('../dist-electron/electron/services/files');
     const local = path.join(store.value.downloadDirectory, 'Fixture.iso');
     await fs.mkdir(path.dirname(local), { recursive: true });
     const emulator = { running: true, gamePath: path.join(root, 'Other.iso') };
-    for (const provider of ['dropbox', 'mega']) {
-      await store.selectCloudProvider(provider);
+    for (const provider of ['mega']) {
       base.dispose();
       await base.ensureFolders();
       const remoteFile = path.join(root, provider, 'PS2Cloud', 'Games', 'Fixture.iso');
       await fs.writeFile(local, 'new game bytes');
       await fs.writeFile(remoteFile, 'old cloud bytes');
-      const games = new GameService(store, base);
+      const games = new GameService(store, new MegaCloudStorage(base));
       games.games.set('fixture', {
         id: 'fixture',
         title: 'Fixture',
@@ -57,11 +54,11 @@ const { walk } = require('../dist-electron/electron/services/files');
         localPath: local,
         cloudPath: 'Fixture.iso',
       });
-      const preview = new SyncService(store, base, games, emulator, () => {});
+      const preview = new SyncService(store, new MegaCloudStorage(base), games, emulator, () => {});
       const plan = await preview.plan({ kind: 'Games', direction: 'upload', gameId: 'fixture' });
       const prepared = preview.detach(plan.id, true);
       const directory = path.join(root, `worker-${provider}`);
-      const { client, store: scoped } = await base.createTransferClient(
+      const { client, store: scoped } = await new MegaCloudStorage(base).createTransferClient(
         structuredClone(store.value),
         directory,
       );
@@ -69,7 +66,7 @@ const { walk } = require('../dist-electron/electron/services/files');
       const scopedGames = new GameService(scoped, client);
       scopedGames.games = new Map(games.games);
       // Mutating the active account must not reroute the already accepted job.
-      await store.selectCloudProvider(provider === 'mega' ? 'dropbox' : 'mega');
+      await store.save({ ...store.value, remote: 'other-account' });
       base.dispose();
       const worker = new SyncService(scoped, client, scopedGames, emulator, () => {}, true);
       worker.adopt(prepared);
@@ -108,7 +105,7 @@ const { walk } = require('../dist-electron/electron/services/files');
         controller.signal,
       );
       cancelWorker.adopt(worker.detach(cancelPlan.id, true));
-      // CLI is deliberately throttled only in this isolated test; MEGA forces limits off.
+      // Cancel promptly; MEGA runtime forces bandwidth limits off.
       process.env.RCLONE_BWLIMIT = '1M';
       const copying = cancelWorker.execute(cancelPlan.id, true);
       const timer = setTimeout(() => controller.abort(), 30);

@@ -1,3 +1,4 @@
+import { MegaCloudStorage } from '../electron/services/mega-cloud-storage';
 import { afterEach, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
@@ -54,7 +55,7 @@ async function fixture() {
   let running = false;
   const service = new AutoSyncService(
     store,
-    rclone,
+    new MegaCloudStorage(rclone),
     () => {},
     resolve,
     () => running,
@@ -210,14 +211,4 @@ it('migrates old preferences with automatic saves enabled', async () => {
   await expect(
     f.store.save({ ...f.store.value, memcardsDirectory: path.join(f.store.userData, 'auto-sync') }),
   ).rejects.toThrow('credentials');
-});
-
-it('keeps provider histories separate even with matching remote and folder names', async () => {
-  const f = await fixture();
-  await f.write(f.local, 'base');
-  await f.service.synchronize();
-  await f.store.save({ ...f.store.value, cloudProvider: 'mega' });
-  await f.write(f.remote, 'other provider');
-  await expect(f.service.synchronize()).rejects.toBeInstanceOf(SyncCancelled);
-  expect(await fs.readFile(f.local, 'utf8')).toBe('base');
 });

@@ -1,4 +1,5 @@
-// Real bundled binary + two-device sync, isolated local alias backend; no Dropbox account needed.
+const { MegaCloudStorage } = require('../dist-electron/electron/services/mega-cloud-storage');
+// Real bundled binary + two-device sync, isolated local alias backend; no cloud account needed.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs/promises');
@@ -31,7 +32,7 @@ const { walk } = require('../dist-electron/electron/services/files');
       assert.equal((await rclone.status()).connected, true);
       const sync = new AutoSyncService(
         store,
-        rclone,
+        new MegaCloudStorage(rclone),
         () => {},
         async () => {
           conflicts++;
@@ -68,13 +69,13 @@ const { walk } = require('../dist-electron/electron/services/files');
     await fs.unlink(b.card);
     await b.sync.synchronize();
     assert.equal(await fs.readFile(b.card, 'utf8'), 'A second');
-    console.log('CLI cloud and two-device merge passed. Checking MEGA API transport and provider switching…');
+    console.log('Two-device merge passed. Checking another MEGA account…');
     const mega = path.join(root, 'mega-remote');
     await fs.mkdir(mega, { recursive: true });
     for (const device of devices) {
       // Alias isolates transport tests from real accounts while exercising MEGA's persistent RC path.
       await device.rclone.call(['config', 'create', 'ps2-mega', 'alias', 'remote', mega, '--no-output']);
-      await device.store.selectCloudProvider('mega');
+      await device.store.save({ ...device.store.value, remote: 'ps2-mega' });
       device.rclone.dispose();
       assert.equal((await device.rclone.status()).connected, true);
     }
@@ -95,25 +96,12 @@ const { walk } = require('../dist-electron/electron/services/files');
     assert.ok(
       (await Promise.all(localBackups.map((f) => fs.readFile(f.absolute, 'utf8')))).includes('MEGA B edit'),
     );
-    // Selecting a provider alone must not transfer local files or erase either saved account.
-    for (const device of devices) {
-      await device.store.selectCloudProvider('dropbox');
-      device.rclone.dispose();
-      assert.equal(device.store.value.remote, 'fixture');
-      assert.equal((await device.rclone.status()).connected, true);
-      assert.deepEqual((await device.rclone.call(['listremotes'])).trim().split(/\r?\n/).sort(), [
-        'fixture:',
-        'ps2-mega:',
-      ]);
-      await device.store.selectCloudProvider('mega');
-      assert.equal(device.store.value.remote, 'ps2-mega');
-    }
     assert.equal(
       await fs.readFile(path.join(cloud, 'PS2Cloud', 'Memcards', 'nested', 'card.ps2'), 'utf8'),
       'A second',
     );
     console.log(
-      'Cloud integration passed: bundled executable, CLI + persistent API transports, two devices, conflicts, backups, deletion recovery, Dropbox/MEGA switching with both accounts retained.',
+      'Cloud integration passed: bundled executable, persistent API transport, two devices, conflicts, backups, deletion recovery.',
     );
   } finally {
     for (const device of devices) device.rclone.dispose();

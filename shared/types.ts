@@ -1,4 +1,9 @@
-export type CloudProvider = 'dropbox' | 'mega';
+// Add future provider credentials here; CloudProvider and CloudCredentials follow automatically.
+export interface CloudCredentialsByProvider {
+  mega: MegaCredentials;
+}
+export type CloudProvider = keyof CloudCredentialsByProvider;
+export type CloudCredentials = CloudCredentialsByProvider[CloudProvider];
 export interface CloudProfile {
   remote: string;
   cloudRoot: string;
@@ -152,9 +157,8 @@ export interface LauncherAPI {
   setCover(gameId: string): Promise<void>;
   prepareDeleteGame(gameId: string): Promise<GameDeletion>;
   deleteGame(token: string, confirmed: boolean): Promise<void>;
-  installRclone(): Promise<void>;
-  connectCloud(credentials?: MegaCredentials): Promise<CloudStatus>;
-  selectCloudProvider(provider: CloudProvider): Promise<Settings>;
+  installCloudComponent(): Promise<void>;
+  connectCloud(credentials?: CloudCredentials): Promise<CloudStatus>;
   syncSaves(): Promise<void>;
   openTransferLogs(): Promise<void>;
   planSync(request: SyncRequest): Promise<SyncPlan>;
@@ -164,6 +168,6 @@ export interface LauncherAPI {
   cancelTransfer(id: string): Promise<void>;
   onTransfers(callback: (transfers: Transfer[]) => void): () => void;
   cancelPlan(id: string): Promise<void>;
-  openLink(link: 'pcsx2' | 'rclone' | 'dropbox' | 'mega'): Promise<void>;
+  openLink(link: 'pcsx2' | 'rclone' | 'mega'): Promise<void>;
   onProgress(callback: (progress: Progress) => void): () => void;
 }

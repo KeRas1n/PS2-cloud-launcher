@@ -70,8 +70,8 @@ describe('launcher data reset', () => {
     ] as const)
       expect(f.store.value[key]).toEqual(previous[key]);
     expect(f.store.value).toMatchObject({
-      cloudProvider: 'dropbox',
-      remote: 'ps2-dropbox',
+      cloudProvider: 'mega',
+      remote: 'ps2-mega',
       cloudProfiles: {},
       fullscreen: true,
       autoSyncSaves: true,

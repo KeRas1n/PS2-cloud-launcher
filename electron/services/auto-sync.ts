@@ -3,7 +3,7 @@ import { promises as fs, createReadStream } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Direction, Progress } from '../../shared/types';
 import { SettingsStore } from './settings';
-import { RcloneService } from './rclone';
+import type { CloudStorage } from './cloud-storage';
 import { atomicJson, exists, walk, within } from './files';
 import { fingerprint, makeFiles, rejectSymlinks } from './sync';
 
@@ -70,16 +70,16 @@ export class AutoSyncService {
   busy = false;
   constructor(
     private store: SettingsStore,
-    private rclone: RcloneService,
+    private cloud: CloudStorage,
     private emit: (p: Progress) => void,
     private resolve: (conflicts: SaveConflict[]) => Promise<Direction | undefined>,
     private running: () => boolean,
   ) {}
   private async metadata(remote: string) {
-    return (await this.rclone.list(remote)).map((f) => ({
-      path: f.Path,
-      size: f.Size,
-      modified: new Date(f.ModTime).toISOString(),
+    return (await this.cloud.list(remote)).map((f) => ({
+      path: f.path,
+      size: f.size,
+      modified: new Date(f.modified).toISOString(),
     }));
   }
   async synchronize() {
@@ -89,7 +89,7 @@ export class AutoSyncService {
     try {
       this.emit({ operation: 'auto-sync', message: 'Checking cloud saves…', saveSyncRunning: true });
       await fs.mkdir(staging, { recursive: true, mode: 0o700 });
-      await this.rclone.ensureFolders();
+      await this.cloud.ensureFolders();
       const s = this.store.value;
       const namespace = createHash('sha256')
         .update(
@@ -121,12 +121,12 @@ export class AutoSyncService {
       const groups: Group[] = [];
       for (const kind of ['Memcards', 'SaveStates'] as const) {
         const root = kind === 'Memcards' ? s.memcardsDirectory : s.saveStatesDirectory;
-        const remote = this.rclone.remote(kind);
+        const remote = this.cloud.remote(kind);
         const before = await this.metadata(remote);
         const cache = path.join(staging, kind);
         await fs.mkdir(cache, { recursive: true });
         // Download a stable snapshot for content hashes; timestamps alone cannot resolve conflicts.
-        await this.rclone.call(['copy', remote, cache, '--ignore-times'], (p) =>
+        await this.cloud.copyDirectory(remote, cache, { ignoreTimes: true }, (p) =>
           this.emit({ ...p, operation: 'auto-sync', message: `Checking ${kind}…` }),
         );
         const cloud = await files(cache);
@@ -179,7 +179,7 @@ export class AutoSyncService {
           throw new Error('Saves changed before replacement. Retry synchronization.');
         const backup =
           direction === 'upload'
-            ? `${this.rclone.remote()}/Backups/${transferId}/${group.kind}/${path.posix.dirname(name)}`
+            ? `${this.cloud.remote()}/Backups/${transferId}/${group.kind}/${path.posix.dirname(name)}`
             : path.join(this.store.userData, 'backups', transferId, group.kind, path.posix.dirname(name));
         const source = direction === 'upload' ? local : group.cloud.find((f) => f.path === name)!.absolute;
         if (direction === 'download') {
@@ -191,17 +191,10 @@ export class AutoSyncService {
           operation: 'auto-sync',
           message: `${direction === 'upload' ? 'Uploading' : 'Downloading'} ${group.kind}/${name}`,
         });
-        await this.rclone.call(
-          [
-            'copyto',
-            source,
-            direction === 'upload' ? remote : local,
-            '--backup-dir',
-            backup,
-            '--ignore-times',
-            '--retries',
-            '3',
-          ],
+        await this.cloud.copyFile(
+          source,
+          direction === 'upload' ? remote : local,
+          { backupDirectory: backup, ignoreTimes: true, retries: 3 },
           (p) => this.emit({ ...p, operation: 'auto-sync', message: `Synchronizing ${group.kind}/${name}` }),
         );
         group.metadata = fingerprint(await this.metadata(group.remote), []);
@@ -212,7 +205,7 @@ export class AutoSyncService {
         const verify = path.join(staging, 'verify', group.kind);
         await fs.mkdir(verify, { recursive: true });
         const before = await this.metadata(group.remote);
-        await this.rclone.call(['copy', group.remote, verify, '--ignore-times']);
+        await this.cloud.copyDirectory(group.remote, verify, { ignoreTimes: true });
         const cloud = await files(verify);
         if (
           fingerprint(before, []) !== fingerprint(await this.metadata(group.remote), []) ||

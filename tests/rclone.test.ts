@@ -30,63 +30,35 @@ it('prefers the bundled component over PATH and old external settings', async ()
   expect(run.mock.calls[0][0]).toBe(bundled);
 });
 
-it('prepares the cloud component automatically during first connection', async () => {
-  const { store } = await fixture();
-  let available = false;
-  const run = vi.spyOn(commands, 'run');
-  const service = new RcloneService(store, () => {});
-  const install = vi.spyOn(service, 'install').mockImplementation(async () => {
-    available = true;
-  });
-  // First remote list must be empty so connect uses config create rather than reconnect.
-  let configured = false;
-  run.mockImplementation(async (_binary, args) => {
-    if (!available) throw new Error('not installed');
-    if (args[0] === 'version') return 'rclone v1.75.2';
-    if (args[0] === 'listremotes') return configured ? `${store.value.remote}:\n` : '';
-    if (args[0] === 'config') configured = true;
-    return '';
-  });
-  // Windows does not chmod; Linux needs a synthetic config file like the real command creates.
-  await fs.mkdir(path.dirname(store.value.rcloneConfig), { recursive: true });
-  await fs.writeFile(store.value.rcloneConfig, '');
-  expect((await service.connect()).connected).toBe(true);
-  expect(install).toHaveBeenCalledTimes(1);
-  expect(run.mock.calls.some(([, args]) => args[0] === 'config' && args[1] === 'create')).toBe(true);
+it('migrates retired storage while preserving local paths and saved MEGA profile', async () => {
+  const { store, root } = await fixture();
+  for (const profile of [undefined, { remote: 'saved-mega', cloudRoot: 'MySaves' }]) {
+    const saved = {
+      ...store.value,
+      cloudProvider: 'retired',
+      remote: 'old-account',
+      cloudProfiles: {
+        retired: { remote: 'old-account', cloudRoot: 'OldSaves' },
+        ...(profile ? { mega: profile } : {}),
+      },
+    };
+    await fs.mkdir(store.userData, { recursive: true });
+    await fs.writeFile(path.join(store.userData, 'settings.json'), JSON.stringify(saved));
+    await store.load();
+    expect(store.value.cloudProvider).toBe('mega');
+    expect(store.value.remote).toBe(profile?.remote ?? 'ps2-mega');
+    expect(store.value.cloudRoot).toBe(profile?.cloudRoot ?? 'PS2Cloud');
+    expect(store.value.memcardsDirectory).toBe(saved.memcardsDirectory);
+    expect(store.value.cloudProfiles).toEqual({});
+    const loaded = new SettingsStore(store.userData, root);
+    await loaded.load();
+    expect(loaded.value).toEqual(store.value);
+  }
 });
 
-it('keeps independent Dropbox and MEGA profiles through switching and restart', async () => {
-  const { root, store } = await fixture();
-  await store.save({ ...store.value, remote: 'existing-dropbox', cloudRoot: 'MyDropboxSaves' });
-  await store.selectCloudProvider('mega');
-  expect(store.value.remote).toBe('ps2-mega');
-  expect(store.value.cloudRoot).toBe('PS2Cloud');
-  await store.save({ ...store.value, cloudRoot: 'MegaSaves' });
-  await store.selectCloudProvider('dropbox');
-  expect(store.value.remote).toBe('existing-dropbox');
-  expect(store.value.cloudRoot).toBe('MyDropboxSaves');
-  const loaded = new SettingsStore(store.userData, root);
-  await loaded.load();
-  await loaded.selectCloudProvider('mega');
-  expect(loaded.value.cloudRoot).toBe('MegaSaves');
-  expect(loaded.value.cloudProvider).toBe('mega');
-  await loaded.selectCloudProvider('dropbox');
-  expect(loaded.value.remote).toBe('existing-dropbox');
-});
-
-it('migrates existing Dropbox settings without losing the configured account', async () => {
+it('rejects unsupported storage in new settings', async () => {
   const { store } = await fixture();
-  const { cloudProvider: _, cloudProfiles: __, ...old } = store.value;
-  await fs.mkdir(store.userData, { recursive: true });
-  await fs.writeFile(
-    path.join(store.userData, 'settings.json'),
-    JSON.stringify({ ...old, remote: 'old-account' }),
-  );
-  await store.load();
-  expect(store.value.cloudProvider).toBe('dropbox');
-  await store.selectCloudProvider('mega');
-  await store.selectCloudProvider('dropbox');
-  expect(store.value.remote).toBe('old-account');
+  await expect(store.save({ ...store.value, cloudProvider: 'retired' })).rejects.toThrow();
 });
 
 it('validates inactive profiles before they can become active', async () => {
@@ -101,7 +73,6 @@ it('validates inactive profiles before they can become active', async () => {
 
 async function megaFixture() {
   const f = await fixture();
-  await f.store.selectCloudProvider('mega');
   const run = vi.spyOn(commands, 'run').mockImplementation(async (_binary, args) => {
     if (args[0] === 'version') return 'rclone v1.75.2';
     if (args.includes('--json')) return '[]';
@@ -116,7 +87,7 @@ async function megaFixture() {
 it('sends MEGA credentials privately over RC and keeps two-factor codes out of stored settings', async () => {
   const f = await megaFixture();
   await fs.mkdir(path.dirname(f.store.value.rcloneConfig), { recursive: true });
-  await fs.writeFile(f.store.value.rcloneConfig, '[dropbox]\ntoken = old-token\n');
+  await fs.writeFile(f.store.value.rcloneConfig, '[other]\ntoken = old-token\n');
   expect(
     (
       await f.service.connect({
@@ -146,7 +117,7 @@ it('sends MEGA credentials privately over RC and keeps two-factor codes out of s
 
 it('restores existing connections and hides secrets after failed MEGA authentication', async () => {
   const f = await megaFixture();
-  const original = '[ps2-dropbox]\ntoken = preserved-token\n[ps2-mega]\npass = old-password\n';
+  const original = '[ps2-mega]\npass = old-password\n';
   await fs.mkdir(path.dirname(f.store.value.rcloneConfig), { recursive: true });
   await fs.writeFile(f.store.value.rcloneConfig, original);
   f.request.mockImplementation(async () => {
@@ -159,10 +130,10 @@ it('restores existing connections and hides secrets after failed MEGA authentica
   expect(await fs.readFile(f.store.value.rcloneConfig, 'utf8')).toBe(original);
 });
 
-it('refuses to replace a Dropbox remote with MEGA credentials', async () => {
+it('refuses to replace an incompatible remote with MEGA credentials', async () => {
   const f = await megaFixture();
   f.run.mockImplementation(async (_binary, args) =>
-    args.includes('--json') ? '[{"name":"ps2-mega","type":"dropbox"}]' : 'rclone v1.75.2',
+    args.includes('--json') ? '[{"name":"ps2-mega","type":"s3"}]' : 'rclone v1.75.2',
   );
   await expect(
     f.service.connect({ email: 'test@example.com', password: 'SecretFixturePassword' }),
@@ -183,4 +154,33 @@ it('clears previous MEGA session keys before connecting a different account', as
   await fs.writeFile(f.store.value.rcloneConfig, '[ps2-mega]\nsession_id = previous-session\n');
   await f.service.connect({ email: 'new@example.com', password: 'NewFixturePassword' });
   expect(f.request.mock.calls.map((call) => call[3])).toEqual(['config/delete', 'config/create']);
+});
+
+it('prepares the component automatically before MEGA sign-in', async () => {
+  const f = await megaFixture();
+  const status = vi
+    .spyOn(f.service, 'status')
+    .mockResolvedValueOnce({ installed: false, connected: false, remotes: [] })
+    .mockResolvedValue({ installed: true, connected: true, remotes: ['ps2-mega'] });
+  const install = vi.spyOn(f.service, 'install').mockResolvedValue();
+  await fs.mkdir(path.dirname(f.store.value.rcloneConfig), { recursive: true });
+  await fs.writeFile(f.store.value.rcloneConfig, '');
+  await f.service.connect({ email: 'test@example.com', password: 'FixturePassword' });
+  expect(install).toHaveBeenCalledOnce();
+  expect(status).toHaveBeenCalledTimes(2);
+  expect(f.request.mock.calls.some((call) => call[3] === 'config/create')).toBe(true);
+});
+
+it('migrates preferences without a provider to the MEGA default', async () => {
+  const { store } = await fixture();
+  const { cloudProvider: _, cloudProfiles: __, ...old } = store.value;
+  await fs.mkdir(store.userData, { recursive: true });
+  await fs.writeFile(
+    path.join(store.userData, 'settings.json'),
+    JSON.stringify({ ...old, remote: 'old-account' }),
+  );
+  await store.load();
+  expect(store.value.cloudProvider).toBe('mega');
+  expect(store.value.remote).toBe('ps2-mega');
+  expect(store.value.memcardsDirectory).toBe(old.memcardsDirectory);
 });

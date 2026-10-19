@@ -1,3 +1,4 @@
+import { MegaCloudStorage } from '../electron/services/mega-cloud-storage';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -32,10 +33,10 @@ describe('path and configuration safety', () => {
     const root = await temp(),
       store = new SettingsStore(path.join(root, 'user'), root);
     await store.load();
-    await store.save({ ...store.value, remote: 'my-dropbox', fullscreen: false });
+    await store.save({ ...store.value, remote: 'my-mega', fullscreen: false });
     const loaded = new SettingsStore(path.join(root, 'user'), root);
     await loaded.load();
-    expect(loaded.value.remote).toBe('my-dropbox');
+    expect(loaded.value.remote).toBe('my-mega');
     expect(loaded.value.fullscreen).toBe(false);
     await expect(store.save({ ...store.value, remote: '--config' })).rejects.toThrow();
     await expect(store.save({ ...store.value, cloudRoot: '../private' })).rejects.toThrow();
@@ -149,7 +150,7 @@ describe('game discovery', () => {
         { Path: 'Cloud.iso', Size: 5, ModTime: '2026-01-01' },
       ],
     } as unknown as RcloneService;
-    const library = await new GameService(store, remote).scan();
+    const library = await new GameService(store, new MegaCloudStorage(remote)).scan();
     expect(library.cloudChecked).toBe(true);
     expect(library.games).toHaveLength(3);
     expect(library.games.find((g) => g.name === 'Local.iso')?.state).toBe('Local Only');
@@ -191,7 +192,13 @@ describe('conflict review', () => {
       },
     } as unknown as RcloneService;
     const emulator = { running: false } as PCSX2Service;
-    const service = new SyncService(store, remote, new GameService(store, remote), emulator, () => {});
+    const service = new SyncService(
+      store,
+      new MegaCloudStorage(remote),
+      new GameService(store, new MegaCloudStorage(remote)),
+      emulator,
+      () => {},
+    );
     const plan = await service.plan({ kind: 'Memcards', direction: 'upload' });
     await expect(service.execute(plan.id, false)).rejects.toThrow('Confirm');
     expect(commands).toHaveLength(0);
@@ -214,7 +221,7 @@ describe('conflict review', () => {
     await store.load();
     const service = new SyncService(
       store,
-      {} as RcloneService,
+      new MegaCloudStorage({} as RcloneService),
       {} as GameService,
       { running: true } as PCSX2Service,
       () => {},

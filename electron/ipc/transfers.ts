@@ -2,10 +2,10 @@ import { shell } from 'electron';
 import { z } from 'zod';
 import type { IpcContext } from './types';
 export function registerTransfersHandlers({ runtime, handle }: IpcContext) {
-  const { rclone, sync, transfers, exclusive, enqueueTransfer } = runtime;
+  const { cloud, sync, transfers, exclusive, enqueueTransfer } = runtime;
   const id = z.string().regex(/^[a-f0-9]{64}$/);
   handle('transfers:logs', async () => {
-    const error = await shell.openPath(await rclone.transferLogDirectory());
+    const error = await shell.openPath(await cloud.transferLogDirectory());
     if (error) throw new Error('Could not open transfer logs.');
   });
   handle('sync:plan', (request) => {

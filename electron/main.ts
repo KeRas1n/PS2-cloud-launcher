@@ -43,7 +43,7 @@ async function start() {
   const runtime = await createRuntime(launcherDir, windows);
   registerIpc(runtime, windows, devUrl, rendererFile);
   registerCoverProtocol(runtime.store.userData);
-  app.on('will-quit', () => runtime.rclone.dispose());
+  app.on('will-quit', () => runtime.cloud.dispose());
   const { transfers } = runtime;
   let quitting = false;
   app.on('before-quit', (event) => {

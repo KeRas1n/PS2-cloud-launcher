@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { SyncCancelled } from '../services/auto-sync';
 import type { IpcContext } from './types';
 export function registerEmulatorHandlers({ runtime, windows, handle, pick }: IpcContext) {
-  const { store, pcsx2, rclone, games, autoSync, transfers, exclusive, session } = runtime;
+  const { store, pcsx2, cloud, games, autoSync, transfers, exclusive, session } = runtime;
   const id = z.string().regex(/^[a-f0-9]{64}$/);
   handle('emulator:install', () => exclusive(() => pcsx2.install()));
   handle('emulator:prepare', () => exclusive(() => pcsx2.prepare()));
@@ -21,12 +21,12 @@ export function registerEmulatorHandlers({ runtime, windows, handle, pick }: Ipc
       if (game && store.value.autoSyncSaves) {
         // Prepare first: profile migration may select existing populated save folders.
         await pcsx2.prepare();
-        const cloud = await rclone.status();
+        const cloudStatus = await cloud.status();
         // A never-connected installation remains fully local without repeated prompts.
-        if (cloud.remotes.includes(store.value.remote)) {
+        if (cloudStatus.remotes.includes(store.value.remote)) {
           session.cloud = true;
           try {
-            if (!cloud.connected) throw new Error(cloud.error ?? 'Cloud is unavailable.');
+            if (!cloudStatus.connected) throw new Error(cloudStatus.error ?? 'Cloud is unavailable.');
             await autoSync.synchronize();
           } catch (error) {
             if (error instanceof SyncCancelled) throw error;

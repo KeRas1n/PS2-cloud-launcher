@@ -2,14 +2,12 @@ import {
   ArrowDownToLine,
   ArrowRight,
   ArrowUpFromLine,
-  Cloud,
   ExternalLink,
   FolderOpen,
   HardDrive,
   Layers3,
   RefreshCw,
 } from 'lucide-react';
-import type { CloudProvider } from '../../../shared/types';
 import { useLauncher } from '../../app/useLauncher';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
@@ -31,49 +29,21 @@ export function CloudPage() {
     setError,
   } = useLauncher();
   const connection = useCloudConnection();
-  const { selectProvider, changeMegaAccount, setChangeMegaAccount } = connection;
+  const { changeMegaAccount, setChangeMegaAccount } = connection;
 
   return (
     <>
       <PageHeading title="Cloud" />
-      <label className="field cloud-provider-select">
-        <span>Cloud storage</span>
-        <select
-          className="profile-select"
-          value={provider}
-          disabled={disabled || emulator?.running}
-          onChange={(e) => void selectProvider(e.target.value as CloudProvider)}
-        >
-          <option value="mega">MEGA (Recomended)</option>
-          <option value="dropbox">Dropbox</option>
-        </select>
-        <small>Saved connections are kept. Switching selects storage; files transfer when syncing.</small>
-      </label>
       <section className="panel provider-panel">
         <div className="provider-copy">
           <div className="row">
             <h2>{providerName}</h2>
             <Badge good={connected}>{connected ? 'Connected' : 'Disconnected'}</Badge>
           </div>
-          {!connected && (
-            <p>
-              {provider === 'mega'
-                ? 'Sign in with your MEGA account below.'
-                : 'Authorize Dropbox in your browser.'}
-            </p>
-          )}
+          {!connected && <p>Sign in with your MEGA account below.</p>}
           <small>Cloud connection is managed by the launcher.</small>
         </div>
-        {provider === 'dropbox' && (
-          <Button
-            disabled={disabled || emulator?.running}
-            onClick={() => void act('Connecting Dropbox', () => api!.connectCloud(), 'Dropbox connected')}
-          >
-            <Cloud size={16} />
-            {connected ? 'Reconnect' : 'Connect Dropbox'}
-          </Button>
-        )}
-        {provider === 'mega' && connected && (
+        {connected && (
           <Button
             secondary
             disabled={disabled || emulator?.running}
@@ -83,9 +53,7 @@ export function CloudPage() {
           </Button>
         )}
       </section>
-      {provider === 'mega' && (!connected || changeMegaAccount) && (
-        <MegaConnectionForm connection={connection} />
-      )}
+      {(!connected || changeMegaAccount) && <MegaConnectionForm connection={connection} />}
       <section className="panel sync-card">
         <h3>Automatic save synchronization</h3>
         <p>

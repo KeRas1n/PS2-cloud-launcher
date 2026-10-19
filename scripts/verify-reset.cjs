@@ -150,7 +150,7 @@ const path = require('node:path');
       'saveStatesDirectory',
     ])
       expect(after[key]).toEqual(before[key]);
-    expect(after.remote).toBe('ps2-dropbox');
+    expect(after.remote).toBe('ps2-mega');
     expect(after.fullscreen).toBe(true);
     expect(await page.evaluate(() => localStorage.getItem('reset-fixture'))).toBeNull();
     expect(await page.evaluate(() => window.launcher.transfers())).toEqual([]);

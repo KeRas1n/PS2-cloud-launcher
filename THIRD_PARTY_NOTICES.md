@@ -1,6 +1,6 @@
 # Third-party components
 
-PS2 Cloud Launcher is independent of Sony, PCSX2, Dropbox, MEGA, and Rclone.
+PS2 Cloud Launcher is independent of Sony, PCSX2, MEGA, and Rclone.
 
 - Electron and Chromium are included in desktop distributions. Electron's MIT license and Chromium's `LICENSES.chromium.html` accompany the runtime. Source: https://github.com/electron/electron
 - React, React DOM, Lucide, Zod, and their runtime dependencies retain their upstream licenses. Their package license files are retained inside `resources/app.asar/node_modules/`. Source repositories are identified in each package's `package.json`.

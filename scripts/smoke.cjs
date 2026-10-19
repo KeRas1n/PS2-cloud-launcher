@@ -55,7 +55,6 @@ const path = require('node:path');
     await page.getByRole('navigation').getByRole('button', { name: 'Cloud', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Cloud', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Install Rclone' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Connect Dropbox', exact: true })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Sync saves now' })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Upload Memory Cards' })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Open transfer logs' })).toBeVisible();
@@ -81,31 +80,20 @@ const path = require('node:path');
     await expect(page.getByRole('status')).toContainText('0 B/s');
     await page.getByRole('button', { name: 'Dismiss activity' }).click();
     await page.screenshot({ path: path.join(root, 'cloud.png'), fullPage: true });
-    const provider = page.getByLabel('Cloud storage', { exact: false });
-    await expect(provider.locator('option').first()).toHaveText('MEGA (Recomended)');
-    await provider.selectOption('mega');
+    await expect(page.locator('.cloud-provider-select')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'MEGA', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Connect MEGA', exact: true })).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Connect Dropbox', exact: true })).toHaveCount(0);
-    await page.screenshot({ path: path.join(root, 'cloud-mega.png'), fullPage: true });
     await page.getByLabel('MEGA email', { exact: true }).fill('fixture@example.com');
     await page.getByLabel('MEGA password', { exact: true }).fill('FixturePassword');
     await expect(page.getByRole('button', { name: 'Connect MEGA', exact: true })).toBeEnabled();
-    await provider.selectOption('dropbox');
-    await expect(page.getByRole('button', { name: 'Connect Dropbox', exact: true })).toBeEnabled();
-    expect((await page.evaluate(() => window.launcher.snapshot())).settings.remote).toBe('ps2-dropbox');
-    await provider.selectOption('mega');
-    await expect(page.getByLabel('MEGA password', { exact: true })).toHaveValue('');
     expect((await page.evaluate(() => window.launcher.snapshot())).settings.remote).toBe('ps2-mega');
-    await provider.selectOption('dropbox');
-    await expect(page.getByRole('button', { name: 'Connect Dropbox', exact: true })).toBeEnabled();
     await page.getByRole('navigation').getByRole('button', { name: 'Settings', exact: true }).click();
     await expect(page.getByRole('tabpanel')).toHaveCount(1);
     await expect(page.getByRole('tab', { name: 'Games', exact: true })).toHaveAttribute(
       'aria-selected',
       'true',
     );
-    await expect(page.getByLabel('Dropbox remote name', { exact: false })).toHaveCount(0);
+    await expect(page.getByLabel('MEGA remote name', { exact: false })).toHaveCount(0);
     const downloadDirectory = path.join(root, `tab-downloads-${Date.now()}`);
     await page.getByRole('textbox', { name: /^Game download directory/ }).fill(downloadDirectory);
     await page.getByRole('tab', { name: 'Emulator', exact: true }).click();
@@ -115,8 +103,8 @@ const path = require('node:path');
     await page.getByRole('tab', { name: 'Cloud', exact: true }).click();
     await expect(page.getByLabel('Automatically sync saves before and after playing')).toBeChecked();
     await page.getByText('Advanced cloud settings', { exact: true }).click();
-    const remote = page.getByLabel('Dropbox remote name', { exact: false });
-    await remote.fill('test-dropbox');
+    const remote = page.getByLabel('MEGA remote name', { exact: false });
+    await remote.fill('test-mega');
     await page.getByRole('tab', { name: 'Games', exact: true }).click();
     await expect(page.getByRole('textbox', { name: /^Game download directory/ })).toHaveValue(
       downloadDirectory,
@@ -132,7 +120,7 @@ const path = require('node:path');
     await page.getByRole('tab', { name: 'Reset data', exact: true }).press('ArrowLeft');
     await expect(page.getByRole('tab', { name: 'Cloud', exact: true })).toBeFocused();
     await page.getByText('Advanced cloud settings', { exact: true }).click();
-    await expect(remote).toHaveValue('test-dropbox');
+    await expect(remote).toHaveValue('test-mega');
     await expect(page.getByRole('tabpanel')).toHaveCount(1);
     await expect(page.getByRole('button', { name: 'Save changes' })).toHaveCount(1);
     // Screen remounts and background snapshot refreshes must retain all unsaved edits.
@@ -142,7 +130,7 @@ const path = require('node:path');
     await page.getByRole('navigation').getByRole('button', { name: 'Settings', exact: true }).click();
     await expect(page.getByText('Unsaved changes.', { exact: true })).toBeVisible();
     await page.getByText('Advanced cloud settings', { exact: true }).click();
-    await expect(remote).toHaveValue('test-dropbox');
+    await expect(remote).toHaveValue('test-mega');
     await page.getByRole('tab', { name: 'Games', exact: true }).click();
     await expect(page.getByRole('textbox', { name: /^Game download directory/ })).toHaveValue(
       downloadDirectory,
@@ -155,7 +143,7 @@ const path = require('node:path');
     await expect(page.getByRole('button', { name: 'Save changes' })).toBeDisabled();
     await expect(page.getByText('Unsaved changes.', { exact: true })).toHaveCount(0);
     const savedSettings = (await page.evaluate(() => window.launcher.snapshot())).settings;
-    expect(savedSettings.remote).toBe('test-dropbox');
+    expect(savedSettings.remote).toBe('test-mega');
     expect(savedSettings.downloadDirectory).toBe(downloadDirectory);
     expect(savedSettings.fullscreen).toBe(!initialFullscreen);
     await page.screenshot({ path: path.join(root, 'settings.png'), fullPage: true });
@@ -213,7 +201,7 @@ const path = require('node:path');
     }
     const settings = (await page.evaluate(() => window.launcher.snapshot())).settings;
     await fs.mkdir(path.dirname(settings.rcloneConfig), { recursive: true });
-    await fs.writeFile(settings.rcloneConfig, `[test-dropbox]\ntype = alias\nremote = ${cloud}\n`);
+    await fs.writeFile(settings.rcloneConfig, `[test-mega]\ntype = alias\nremote = ${cloud}\n`);
     const cloudStatus = (await page.evaluate(() => window.launcher.snapshot())).cloud;
     expect(
       cloudStatus,
@@ -313,7 +301,7 @@ const path = require('node:path');
     await page.screenshot({ path: path.join(root, 'settings-responsive.png'), fullPage: true });
     expect(errors).toEqual([]);
     console.log(
-      'Electron smoke passed: secure preload, settings draft persistence across navigation/refresh, cloud switching, real concurrent Rclone downloads/queue/cancellation, launch during transfers, current speed, download manager and responsive layout.',
+      'Electron smoke passed: secure preload, settings draft persistence across navigation/refresh, MEGA sign-in, real concurrent Rclone downloads/queue/cancellation, launch during transfers, current speed, download manager and responsive layout.',
     );
   } finally {
     await desktop.close();

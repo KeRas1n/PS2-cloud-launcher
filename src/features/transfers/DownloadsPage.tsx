@@ -36,10 +36,7 @@ export function DownloadsPage() {
             <div className="transfer-info">
               <div className="transfer-title">
                 <h3>{item.title}</h3>
-                <span>
-                  {item.provider === 'mega' ? 'MEGA' : 'Dropbox'} ·{' '}
-                  {item.direction === 'download' ? 'Download' : 'Upload'}
-                </span>
+                <span>MEGA · {item.direction === 'download' ? 'Download' : 'Upload'}</span>
               </div>
               <div className="progress-track">
                 <div

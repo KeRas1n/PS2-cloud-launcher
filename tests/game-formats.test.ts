@@ -1,3 +1,4 @@
+import { MegaCloudStorage } from '../electron/services/mega-cloud-storage';
 import { afterEach, describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -59,13 +60,19 @@ describe('PCSX2 formats', () => {
       list: async () =>
         gameExtensions.map((extension) => ({ Path: `Cloud.${extension}`, Size: 12, ModTime: '2026-01-01' })),
     } as unknown as RcloneService;
-    const games = new GameService(store, remote);
+    const games = new GameService(store, new MegaCloudStorage(remote));
     const library = await games.scan();
     expect(library.games).toHaveLength(gameExtensions.length * 2);
     expect(library.warnings).toEqual([]);
     expect(library.games.filter((game) => game.name.endsWith('.cue'))).toEqual([]);
     const binary = library.games.find((game) => game.name === 'Local.bin')!;
-    const sync = new SyncService(store, remote, games, { running: false } as PCSX2Service, () => {});
+    const sync = new SyncService(
+      store,
+      new MegaCloudStorage(remote),
+      games,
+      { running: false } as PCSX2Service,
+      () => {},
+    );
     const plan = await sync.plan({ kind: 'Games', direction: 'upload', gameId: binary.id });
     expect(plan.files.map((file) => file.path)).toEqual(['Local.bin']);
     const cloudBinary = library.games.find((game) => game.name === 'Cloud.bin')!;
@@ -81,7 +88,7 @@ describe('PCSX2 formats', () => {
       remote: () => 'fixture:Games',
       list: async () => [{ Path: 'Missing.cue', Size: 30, ModTime: '2026-01-01' }],
     } as unknown as RcloneService;
-    const library = await new GameService(store, remote).scan();
+    const library = await new GameService(store, new MegaCloudStorage(remote)).scan();
     expect(library.games).toEqual([]);
     expect(library.warnings).toHaveLength(2);
     expect(library.warnings[0]).toContain('CUE alone cannot run a game');

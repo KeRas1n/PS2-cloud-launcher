@@ -1,3 +1,4 @@
+import { MegaCloudStorage } from '../electron/services/mega-cloud-storage';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -29,7 +30,7 @@ async function fixture() {
     list: async () => (cloud ? [{ Path: 'Disc.bin', Size: 16, ModTime: '2026-01-01' }] : []),
     call: mutate,
   } as unknown as RcloneService;
-  const games = new GameService(store, remote);
+  const games = new GameService(store, new MegaCloudStorage(remote));
   games.games.set('disc', {
     id: 'disc',
     name: 'Disc.bin',

@@ -19,12 +19,6 @@ export function useSettingsDraft(settings: Settings | undefined) {
           Object.assign(next, { [key]: settings[key] });
         }
       }
-      // Provider-specific paths must follow the selected account, including a dirty form.
-      if (baseline.cloudProvider !== settings.cloudProvider) {
-        next.cloudProvider = settings.cloudProvider;
-        next.remote = settings.remote;
-        next.cloudRoot = settings.cloudRoot;
-      }
       return next;
     });
   }, [settings]);

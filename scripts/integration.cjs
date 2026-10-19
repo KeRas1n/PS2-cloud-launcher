@@ -1,3 +1,4 @@
+const { MegaCloudStorage } = require('../dist-electron/electron/services/mega-cloud-storage');
 // Opt-in network integration. Downloads official binaries; touches only test-results/integration-*.
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -24,8 +25,8 @@ const { SyncService } = require('../dist-electron/electron/services/sync');
   await store.save({ ...store.value, remote: 'fixture' });
   await rclone.ensureFolders();
   const pcsx2 = new PCSX2Service(store, emit);
-  const games = new GameService(store, rclone);
-  const sync = new SyncService(store, rclone, games, pcsx2, emit);
+  const games = new GameService(store, new MegaCloudStorage(rclone));
+  const sync = new SyncService(store, new MegaCloudStorage(rclone), games, pcsx2, emit);
   const local = store.value.memcardsDirectory;
   const remote = path.join(cloud, 'PS2Cloud', 'Memcards');
   await fs.mkdir(path.join(local, 'nested'), { recursive: true });

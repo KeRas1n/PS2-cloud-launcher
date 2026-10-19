@@ -7,7 +7,7 @@ import type { Progress } from '../shared/types';
 import { AutoSyncService, SyncCancelled } from './services/auto-sync';
 import { GameService } from './services/games';
 import { PCSX2Service } from './services/pcsx2';
-import { RcloneService } from './services/rclone';
+import { createCloudStorage } from './services/cloud-storage-factory';
 import { SettingsStore } from './services/settings';
 import { SyncService } from './services/sync';
 import { TransferQueue } from './services/transfer-queue';
@@ -35,7 +35,7 @@ export async function createRuntime(launcherDir: string, windows: WindowReferenc
         });
       } else transfers.wake();
     }),
-    rclone = new RcloneService(
+    cloud = createCloudStorage(
       store,
       emit,
       app.isPackaged
@@ -48,11 +48,11 @@ export async function createRuntime(launcherDir: string, windows: WindowReferenc
             process.platform === 'win32' ? 'rclone.exe' : 'rclone',
           ),
     );
-  const games = new GameService(store, rclone),
-    sync = new SyncService(store, rclone, games, pcsx2, emit);
+  const games = new GameService(store, cloud),
+    sync = new SyncService(store, cloud, games, pcsx2, emit);
   const autoSync = new AutoSyncService(
     store,
-    rclone,
+    cloud,
     emit,
     async (conflicts) => {
       const result = await dialog.showMessageBox(windows.current!, {
@@ -103,7 +103,7 @@ export async function createRuntime(launcherDir: string, windows: WindowReferenc
     const directory = path.join(store.userData, 'transfer-staging', randomUUID());
     let close: (() => Promise<void>) | undefined;
     try {
-      const { client, store: scopedStore } = await rclone.createTransferClient(settings, directory);
+      const { client, store: scopedStore } = await cloud.createTransferClient(settings, directory);
       close = () => client.close();
       const scopedGames = new GameService(scopedStore, client);
       scopedGames.games = new Map([...games.games].map(([id, game]) => [id, structuredClone(game)]));
@@ -152,7 +152,7 @@ export async function createRuntime(launcherDir: string, windows: WindowReferenc
   return {
     store,
     pcsx2,
-    rclone,
+    cloud,
     games,
     sync,
     autoSync,
@@ -211,7 +211,7 @@ export async function createRuntime(launcherDir: string, windows: WindowReferenc
         try {
           const targets = await prepareLauncherReset(store.userData, store.value);
           await transfers.clearHistory();
-          await rclone.resetSession();
+          await cloud.resetSession();
           const browserSession = windows.current?.webContents.session;
           await browserSession?.clearCache();
           await browserSession?.clearStorageData();

@@ -62,8 +62,8 @@ export function useLauncherState() {
   }
   const disabled = !!busy || saveSyncRunning || booting || !api;
   const connected = !!snapshot?.cloud.connected;
-  const provider = snapshot?.settings.cloudProvider ?? 'dropbox';
-  const providerName = provider === 'mega' ? 'MEGA' : 'Dropbox';
+  const provider = snapshot?.settings.cloudProvider ?? 'mega';
+  const providerName = 'MEGA';
   const emulator = snapshot?.emulator;
 
   return {

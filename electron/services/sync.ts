@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Progress, SyncRequest, SyncPlan } from '../../shared/types';
 import { SettingsStore } from './settings';
-import { RcloneService } from './rclone';
+import type { CloudStorage } from './cloud-storage';
 import { GameService } from './games';
 import { PCSX2Service } from './pcsx2';
 import { exists, safeRelative, walk, within } from './files';
@@ -67,7 +67,7 @@ export class SyncService {
   busy = false;
   constructor(
     private store: SettingsStore,
-    private rclone: RcloneService,
+    private cloud: CloudStorage,
     private games: GameService,
     private pcsx2: PCSX2Service,
     private emit: (p: Progress) => void,
@@ -95,19 +95,19 @@ export class SyncService {
         const stat = await fs.stat(file);
         local.push({ path: relative, size: stat.size, modified: stat.mtime.toISOString(), absolute: file });
       }
-      remote = (await this.rclone.list(this.rclone.remote('Games')))
-        .filter((f) => f.Path.toLowerCase() === relative.toLowerCase())
-        .map((f) => ({ path: f.Path, size: f.Size, modified: f.ModTime }));
+      remote = (await this.cloud.list(this.cloud.remote('Games')))
+        .filter((f) => f.path.toLowerCase() === relative.toLowerCase())
+        .map((f) => ({ path: f.path, size: f.size, modified: f.modified }));
     } else {
       if (!(await exists(root)) && request.direction === 'upload')
         throw new Error(
           `Local save directory does not exist: ${root}. Run PCSX2 or select your existing save folder in Settings.`,
         );
       local = (await exists(root)) ? (await walk(root)).map((f) => ({ ...f })) : [];
-      remote = (await this.rclone.list(this.rclone.remote(request.kind))).map((f) => ({
-        path: f.Path,
-        size: f.Size,
-        modified: f.ModTime,
+      remote = (await this.cloud.list(this.cloud.remote(request.kind))).map((f) => ({
+        path: f.path,
+        size: f.size,
+        modified: f.modified,
       }));
     }
     return request.direction === 'upload'
@@ -118,7 +118,7 @@ export class SyncService {
     const settings = JSON.stringify(this.store.value);
     if (this.busy || (request.kind !== 'Games' && this.pcsx2.running))
       throw new Error('Close PCSX2 and wait for active transfers before synchronizing.');
-    await this.rclone.ensureFolders();
+    await this.cloud.ensureFolders();
     const { source, destination } = await this.entries(request);
     if (settings !== JSON.stringify(this.store.value))
       throw new Error('Settings changed. Review a new transfer preview.');
@@ -127,7 +127,7 @@ export class SyncService {
       files = makeFiles(source, destination);
     const backupLocation =
       request.direction === 'upload'
-        ? `${this.rclone.remote()}/Backups/${id}/${request.kind}`
+        ? `${this.cloud.remote()}/Backups/${id}/${request.kind}`
         : path.join(this.store.userData, 'backups', id, request.kind);
     const plan: SyncPlan = {
       id,
@@ -193,7 +193,7 @@ export class SyncService {
         this.signal?.throwIfAborted();
         const file = source[index];
         safeRelative(file.path);
-        const remote = `${this.rclone.remote(request.kind)}/${file.path}`;
+        const remote = `${this.cloud.remote(request.kind)}/${file.path}`;
         const local = request.direction === 'upload' ? file.absolute! : within(root, file.path);
         await rejectSymlinks(local);
         if (request.direction === 'download') await fs.mkdir(path.dirname(local), { recursive: true });
@@ -215,35 +215,26 @@ export class SyncService {
           totalBytes: plan.bytes,
           percent: plan.bytes ? (completed / plan.bytes) * 100 : undefined,
         });
-        // copyto never propagates deletions. Rclone moves replaced destinations into backup-dir before writing.
         const copy = this.background
-          ? (args: string[], progress: (p: Progress) => void) =>
-              this.stagedCopy(args, progress, file, destination, request, plan, index)
-          : (args: string[], progress: (p: Progress) => void) => this.rclone.call(args, progress);
-        await copy(
-          [
-            'copyto',
-            from,
-            to,
-            '--backup-dir',
-            backup,
-            '--ignore-times',
-            '--retries',
-            '3',
-            '--low-level-retries',
-            '5',
-          ],
-          (progress) => {
-            const bytes = Math.min(plan.bytes, completed + (progress.bytes ?? 0));
-            this.emit({
-              ...progress,
-              message: `${index + 1}/${source.length}: ${file.path}`,
-              bytes,
-              totalBytes: plan.bytes,
-              percent: plan.bytes ? (bytes / plan.bytes) * 100 : undefined,
-            });
-          },
-        );
+          ? (progress: (p: Progress) => void) =>
+              this.stagedCopy(from, to, backup, progress, file, destination, request, plan, index)
+          : (progress: (p: Progress) => void) =>
+              this.cloud.copyFile(
+                from,
+                to,
+                { backupDirectory: backup, ignoreTimes: true, retries: 3, lowLevelRetries: 5 },
+                progress,
+              );
+        await copy((progress) => {
+          const bytes = Math.min(plan.bytes, completed + (progress.bytes ?? 0));
+          this.emit({
+            ...progress,
+            message: `${index + 1}/${source.length}: ${file.path}`,
+            bytes,
+            totalBytes: plan.bytes,
+            percent: plan.bytes ? (bytes / plan.bytes) * 100 : undefined,
+          });
+        });
         completed += file.size;
       }
       this.emit({
@@ -258,7 +249,9 @@ export class SyncService {
     }
   }
   private async stagedCopy(
-    args: string[],
+    from: string,
+    to: string,
+    backup: string,
     progress: (p: Progress) => void,
     file: Entry,
     destination: Entry[],
@@ -266,18 +259,17 @@ export class SyncService {
     plan: SyncPlan,
     index: number,
   ) {
-    const from = args[1],
-      to = args[2],
-      backup = args[args.indexOf('--backup-dir') + 1];
     const download = request.direction === 'download';
     const stage = download
       ? path.join(path.dirname(to), `.${path.basename(to)}.${plan.id}.partial`)
-      : `${this.rclone.remote(request.kind)}/.launcher-${plan.id}-${index}.partial`;
+      : `${this.cloud.remote(request.kind)}/.launcher-${plan.id}-${index}.partial`;
     const previous = destination.find((f) => f.path === file.path);
     let movedOriginal = false;
     try {
-      await this.rclone.call(
-        ['copyto', from, stage, '--ignore-times', '--inplace', '--retries', '3', '--low-level-retries', '5'],
+      await this.cloud.copyFile(
+        from,
+        stage,
+        { ignoreTimes: true, inPlace: true, retries: 3, lowLevelRetries: 5 },
         progress,
       );
       this.signal?.throwIfAborted();
@@ -307,31 +299,30 @@ export class SyncService {
         this.signal?.throwIfAborted();
         await fs.rename(stage, to);
       } else {
-        const current = (await this.rclone.list(this.rclone.remote(request.kind))).find(
-          (f) => f.Path === file.path,
+        const current = (await this.cloud.list(this.cloud.remote(request.kind))).find(
+          (f) => f.path === file.path,
         );
         if (
           !!previous !== !!current ||
-          (previous && current && (previous.size !== current.Size || previous.modified !== current.ModTime))
+          (previous && current && (previous.size !== current.size || previous.modified !== current.modified))
         )
           throw new Error('Cloud destination changed during transfer. Original file kept.');
         this.signal?.throwIfAborted();
         if (previous) {
-          await this.rclone.commit(['moveto', to, `${backup}/${path.posix.basename(file.path)}`]);
+          await this.cloud.commitMove(to, `${backup}/${path.posix.basename(file.path)}`);
           movedOriginal = true;
         }
         try {
-          await this.rclone.commit(['moveto', stage, to]);
+          await this.cloud.commitMove(stage, to);
         } catch (error) {
-          if (movedOriginal)
-            await this.rclone.commit(['moveto', `${backup}/${path.posix.basename(file.path)}`, to]);
+          if (movedOriginal) await this.cloud.commitMove(`${backup}/${path.posix.basename(file.path)}`, to);
           throw error;
         }
       }
     } finally {
       // Staging is unique to this plan; cancellation never removes an existing destination.
       if (download) await fs.rm(stage, { force: true, maxRetries: 10, retryDelay: 100 }).catch(() => {});
-      else await this.rclone.commit(['deletefile', stage]).catch(() => {});
+      else await this.cloud.commitDelete(stage).catch(() => {});
     }
   }
 }

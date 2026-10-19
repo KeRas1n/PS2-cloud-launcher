@@ -1,3 +1,4 @@
+import { MegaCloudStorage } from '../electron/services/mega-cloud-storage';
 import { afterEach, describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -31,7 +32,7 @@ async function fixture() {
       return '';
     },
   } as unknown as RcloneService;
-  const games = new GameService(store, remote);
+  const games = new GameService(store, new MegaCloudStorage(remote));
   games.games.set('disc', {
     id: 'disc',
     name: 'Disc.iso',
@@ -42,7 +43,15 @@ async function fixture() {
     cloudPath: 'Disc.iso',
   });
   const emulator = { running: true, gamePath: path.join(root, 'Other.iso') } as PCSX2Service;
-  const sync = new SyncService(store, remote, games, emulator, () => {}, true, controller.signal);
+  const sync = new SyncService(
+    store,
+    new MegaCloudStorage(remote),
+    games,
+    emulator,
+    () => {},
+    true,
+    controller.signal,
+  );
   return { root, store, destination, controller, remote, emulator, sync };
 }
 describe('background download commit', () => {

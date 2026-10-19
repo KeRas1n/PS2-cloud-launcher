@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import type { Game, GameDeletion, Library } from '../../shared/types';
 import { SettingsStore } from './settings';
-import { RcloneService } from './rclone';
+import type { CloudStorage } from './cloud-storage';
 import { walk, exists } from './files';
 import { isGame, gameTitle } from '../../shared/game-formats';
 
@@ -21,7 +21,7 @@ export class GameService {
   >();
   constructor(
     private store: SettingsStore,
-    private rclone: RcloneService,
+    private cloud: CloudStorage,
   ) {}
   async scan(): Promise<Library> {
     const warnings: string[] = [];
@@ -79,21 +79,21 @@ export class GameService {
       }
     }
     let cloudChecked = false;
-    const status = await this.rclone.status();
+    const status = await this.cloud.status();
     if (status.connected) {
       try {
-        await this.rclone.ensureFolders();
-        const files = await this.rclone.list(this.rclone.remote('Games'));
+        await this.cloud.ensureFolders();
+        const files = await this.cloud.list(this.cloud.remote('Games'));
         if (
-          files.some((file) => /\.cue$/i.test(file.Path)) &&
-          !files.some((file) => /\.bin$/i.test(file.Path))
+          files.some((file) => /\.cue$/i.test(file.path)) &&
+          !files.some((file) => /\.bin$/i.test(file.path))
         )
           warnings.push(
             'Cloud contains CUE descriptors without BIN images. Upload the associated BIN files: PCSX2 cannot play CUE alone.',
           );
         for (const file of files) {
-          if (!isGame(file.Path)) continue;
-          const name = file.Path.split('/').pop()!,
+          if (!isGame(file.path)) continue;
+          const name = file.path.split('/').pop()!,
             key = gameKey(name);
           const local = games.get(key);
           if (local?.cloudPath) {
@@ -101,15 +101,15 @@ export class GameService {
             continue;
           }
           if (local) {
-            local.cloudPath = file.Path;
+            local.cloudPath = file.path;
             local.state = 'In Cloud';
           } else
             games.set(key, {
               id: createHash('sha256').update(key).digest('hex'),
               name,
               title: gameTitle(name),
-              size: file.Size,
-              cloudPath: file.Path,
+              size: file.size,
+              cloudPath: file.path,
               state: 'Cloud Only',
             });
         }
@@ -163,14 +163,14 @@ export class GameService {
   }
   private async cloudCopy(game: Game): Promise<GameDeletion['cloud']> {
     try {
-      const status = await this.rclone.status();
+      const status = await this.cloud.status();
       if (!status.connected)
         return status.installed && !status.error && !status.remotes.includes(this.store.value.remote)
           ? 'missing'
           : 'unknown';
-      const files = await this.rclone.list(this.rclone.remote('Games'));
+      const files = await this.cloud.list(this.cloud.remote('Games'));
       const name = (game.cloudPath ?? game.name).toLowerCase();
-      return files.some((file) => file.Path.toLowerCase() === name) ? 'stored' : 'missing';
+      return files.some((file) => file.path.toLowerCase() === name) ? 'stored' : 'missing';
     } catch {
       return 'unknown';
     }

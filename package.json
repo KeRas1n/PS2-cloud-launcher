@@ -2,7 +2,7 @@
   "name": "ps2-cloud-launcher",
   "version": "0.1.4",
   "private": true,
-  "description": "A local-first PS2 library with PCSX2, Dropbox and MEGA",
+  "description": "A local-first PS2 library with PCSX2 and MEGA",
   "author": "PS2 Cloud Launcher contributors",
   "license": "MIT",
   "main": "dist-electron/electron/main.js",

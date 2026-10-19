@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { z } from 'zod';
-import type { CloudProvider, Settings } from '../../shared/types';
+import type { Settings } from '../../shared/types';
 import { atomicJson } from './files';
 
 const absolute = z
@@ -14,10 +14,9 @@ const absolute = z
   );
 export const settingsSchema = z
   .object({
-    cloudProvider: z.enum(['dropbox', 'mega']).default('dropbox'),
+    cloudProvider: z.literal('mega').default('mega'),
     cloudProfiles: z
       .object({
-        dropbox: z.object({ remote: z.string(), cloudRoot: z.string() }).optional(),
         mega: z.object({ remote: z.string(), cloudRoot: z.string() }).optional(),
       })
       .strict()
@@ -81,7 +80,7 @@ export class SettingsStore {
     }
     const data = path.join(root, 'data');
     this.value = {
-      cloudProvider: 'dropbox',
+      cloudProvider: 'mega',
       cloudProfiles: {},
       gameDirectories: [],
       downloadDirectory: path.join(this.userData, 'Games'),
@@ -93,15 +92,23 @@ export class SettingsStore {
       saveStatesDirectory: path.join(data, 'sstates'),
       rclonePath: 'rclone',
       rcloneConfig: path.join(this.userData, 'credentials', 'rclone.conf'),
-      remote: 'ps2-dropbox',
+      remote: 'ps2-mega',
       cloudRoot: 'PS2Cloud',
       fullscreen: true,
       autoSyncSaves: true,
     };
     try {
-      this.value = this.validate(
-        JSON.parse(await fs.readFile(path.join(this.userData, 'settings.json'), 'utf8')),
-      );
+      const saved = JSON.parse(await fs.readFile(path.join(this.userData, 'settings.json'), 'utf8'));
+      // Retire unsupported providers without reusing their account or sync history.
+      const migrated = saved.cloudProvider !== 'mega';
+      this.value = this.validate({
+        ...saved,
+        ...(migrated ? (saved.cloudProfiles?.mega ?? { remote: 'ps2-mega', cloudRoot: 'PS2Cloud' }) : {}),
+        cloudProvider: 'mega',
+        cloudProfiles: {},
+      });
+      if (migrated || Object.keys(saved.cloudProfiles ?? {}).length)
+        await atomicJson(path.join(this.userData, 'settings.json'), this.value);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
         throw new Error(
@@ -120,28 +127,14 @@ export class SettingsStore {
     // Retain discovery paths, including external installations and existing PCSX2 profiles.
     return this.save({
       ...this.value,
-      cloudProvider: 'dropbox',
+      cloudProvider: 'mega',
       cloudProfiles: {},
       rclonePath: 'rclone',
       rcloneConfig: path.join(this.userData, 'credentials', 'rclone.conf'),
-      remote: 'ps2-dropbox',
+      remote: 'ps2-mega',
       cloudRoot: 'PS2Cloud',
       fullscreen: true,
       autoSyncSaves: true,
-    });
-  }
-  async selectCloudProvider(provider: CloudProvider) {
-    if (provider === this.value.cloudProvider) return this.value;
-    const current = this.value;
-    const profile = current.cloudProfiles[provider] ?? { remote: `ps2-${provider}`, cloudRoot: 'PS2Cloud' };
-    return this.save({
-      ...current,
-      ...profile,
-      cloudProvider: provider,
-      cloudProfiles: {
-        ...current.cloudProfiles,
-        [current.cloudProvider]: { remote: current.remote, cloudRoot: current.cloudRoot },
-      },
     });
   }
   private validate(input: unknown) {

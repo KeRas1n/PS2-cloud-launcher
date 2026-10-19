@@ -68,15 +68,15 @@ export class RcloneService {
   }
   // Small commit/rollback steps must finish even when cancellation arrives at that instant.
   commit(args: string[]) {
-    return this.invoke(args, false, false, false);
+    return this.invoke(args, false, false);
   }
   private async binary() {
     return this.bundledPath && (await exists(this.bundledPath))
       ? this.bundledPath
       : this.store.value.rclonePath;
   }
-  async call(args: string[], progress: boolean | ((progress: Progress) => void) = false, oauth = false) {
-    if (!['copy', 'copyto'].includes(args[0])) return this.invoke(args, progress, oauth);
+  async call(args: string[], progress: boolean | ((progress: Progress) => void) = false) {
+    if (!['copy', 'copyto'].includes(args[0])) return this.invoke(args, progress);
     const id = randomUUID(),
       started = performance.now();
     const provider = this.store.value.cloudProvider;
@@ -85,30 +85,17 @@ export class RcloneService {
       event: 'transfer-start',
       id,
       provider,
-      transport: provider === 'mega' ? 'rc' : 'cli',
+      transport: 'rc',
       command: args[0],
       source: path.isAbsolute(args[1]) ? 'local' : 'cloud',
       destination: path.isAbsolute(args[2]) ? 'local' : 'cloud',
       fileId: createHash('sha256').update(args[1]).digest('hex').slice(0, 16),
     });
     try {
-      const result = await this.invoke(
-        args,
-        (p) => {
-          latest = p;
-          if (provider !== 'mega')
-            this.log.write({
-              event: 'transfer-sample',
-              id,
-              bytes: p.bytes,
-              totalBytes: p.totalBytes,
-              speed: p.speed,
-              elapsedSeconds: (performance.now() - started) / 1000,
-            });
-          if (progress) (typeof progress === 'function' ? progress : this.emit)(p);
-        },
-        oauth,
-      );
+      const result = await this.invoke(args, (p) => {
+        latest = p;
+        if (progress) (typeof progress === 'function' ? progress : this.emit)(p);
+      });
       const seconds = (performance.now() - started) / 1000;
       this.log.write({
         event: 'transfer-finish',
@@ -135,7 +122,6 @@ export class RcloneService {
   private async invoke(
     args: string[],
     progress: boolean | ((progress: Progress) => void),
-    oauth: boolean,
     cancellable = true,
   ) {
     const s = this.store.value;
@@ -143,10 +129,7 @@ export class RcloneService {
     signal?.throwIfAborted();
     const started = performance.now();
     let previous = { bytes: 0, time: started };
-    if (
-      s.cloudProvider === 'mega' &&
-      ['lsjson', 'lsd', 'mkdir', 'copy', 'copyto', 'moveto', 'deletefile'].includes(args[0])
-    )
+    if (['lsjson', 'lsd', 'mkdir', 'copy', 'copyto', 'moveto', 'deletefile'].includes(args[0]))
       return this.control.command(
         await this.binary(),
         s.rcloneConfig,
@@ -166,8 +149,7 @@ export class RcloneService {
           : []),
       ],
       {
-        timeout: oauth ? 300_000 : progress ? 24 * 60 * 60 * 1000 : 120_000,
-        privateOutput: oauth,
+        timeout: progress ? 24 * 60 * 60 * 1000 : 120_000,
         signal,
         onLine: progress
           ? (line) => {
@@ -240,37 +222,7 @@ export class RcloneService {
     try {
       if (!(await this.status()).installed) await this.install();
       await fs.mkdir(path.dirname(this.store.value.rcloneConfig), { recursive: true, mode: 0o700 });
-      if (this.store.value.cloudProvider === 'mega') return await this.connectMega(credentials);
-      const names = (await this.call(['listremotes'])).split(/\r?\n/);
-      this.emit({
-        operation: 'cloud',
-        message: 'Approve Dropbox access in your browser. This may take a few minutes.',
-      });
-      if (names.includes(this.store.value.remote + ':')) {
-        // Check backend without ever reading or returning the token-bearing config.
-        const providers = JSON.parse(await this.call(['listremotes', '--json'])) as {
-          name: string;
-          type: string;
-        }[];
-        if (!providers.some((p) => p.name === this.store.value.remote && p.type === 'dropbox'))
-          throw new Error('Selected remote is not Dropbox. Choose a new remote name in Settings.');
-        await this.call(
-          ['config', 'reconnect', this.store.value.remote + ':', '--auto-confirm'],
-          false,
-          true,
-        );
-      } else {
-        await this.call(
-          ['config', 'create', this.store.value.remote, 'dropbox', 'config_is_local', 'true', '--no-output'],
-          false,
-          true,
-        );
-      }
-      if (process.platform !== 'win32') await fs.chmod(this.store.value.rcloneConfig, 0o600);
-      await this.ensureFolders();
-      const status = await this.status();
-      if (!status.connected) throw new Error(status.error ?? 'Dropbox authorization did not complete.');
-      return status;
+      return await this.connectMega(credentials);
     } finally {
       this.authorizing = false;
     }
