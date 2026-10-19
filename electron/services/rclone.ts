@@ -171,7 +171,7 @@ export class RcloneService {
       },
     );
   }
-  remote(kind?: SyncKind) {
+  remote(kind?: SyncKind | 'BIOS') {
     const s = this.store.value;
     return `${s.remote}:${[s.cloudRoot, kind].filter(Boolean).join('/')}`;
   }
@@ -213,7 +213,7 @@ export class RcloneService {
     }
   }
   async ensureFolders() {
-    for (const kind of ['Games', 'Memcards', 'SaveStates'] as const)
+    for (const kind of ['Games', 'Memcards', 'SaveStates', 'BIOS'] as const)
       await this.call(['mkdir', this.remote(kind)]);
   }
   async connect(credentials?: MegaCredentials) {

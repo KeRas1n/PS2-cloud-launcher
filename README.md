@@ -64,7 +64,7 @@ install the older updater-enabled build, then publish a higher version and verif
 ## First launch
 
 1. **Emulator:** select **Install PCSX2**. The launcher resolves the latest non-prerelease from `PCSX2/pcsx2` on GitHub and selects the Windows portable archive or Linux AppImage. Automatic installation requires x86-64. You may select an existing executable in Settings instead.
-2. Import an uncompressed BIOS dumped from your own console in **Emulator**. Its ROM directory is checked before importing, and the launcher selects it automatically. Choose another imported BIOS from the launcher dropdown if needed. The launcher never provides BIOS or game downloads. **Prepare emulator** can create a profile in advance; game launch also prepares it automatically. No PCSX2 setup wizard is needed.
+2. Import an uncompressed BIOS dumped from your own console in **Emulator**. Its ROM directory is checked before copying into `emulator/data/bios` (or your configured BIOS directory), and the launcher selects it automatically. Choose another imported BIOS from the launcher dropdown if needed. When MEGA is connected, importing queues a BIOS backup. Successful sign-in, including retrying a saved connection, queues restoration of missing BIOS files and backup of local BIOS files missing from MEGA. These transfers appear in **Downloads** with progress, cancellation and errors. Downloaded images are validated before installation; existing local/cloud filenames are kept. The launcher only restores your own cloud BIOS files. **Prepare emulator** can create a profile in advance; game launch also prepares it automatically. No PCSX2 setup wizard is needed.
 3. **Settings:** add folders containing your own PCSX2 images. Supported extensions: `.iso`, `.bin`, `.img`, `.mdf`, `.gz`, `.cso`, `.zso`, `.chd`, `.elf`, `.dump`, `.gs`, `.gs.xz`, `.gs.zst` (disc images, homebrew and diagnostic dumps, matching [PCSX2's loadable formats](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/VMManager.cpp)). Save preferences. Scanning is recursive, skips hidden entries and symbolic links, and includes the game download directory automatically. The same formats work locally and in cloud transfers.
 
    `.cue`/`.toc` files describe a disc; they do not contain its data. [PCSX2 does not open them directly](https://pcsx2.net/docs/setup/discs/). For CUE/BIN dumps, include the associated `.bin` image in a scanned folder; the launcher lists and launches that image. A CUE without its referenced images produces a library warning. ZIP/7z/RAR archives need extraction first. GS dumps replay graphics and are not playable games.
@@ -125,6 +125,7 @@ An unconnected installation plays locally. Once connected, synchronization failu
 ```text
 PS2Cloud/
   Games/       # all supported PCSX2 image, homebrew and dump formats
+  BIOS/        # your imported BIOS images
   Memcards/    # memory cards, including folder cards
   SaveStates/  # save states
   Backups/     # prior cloud files organized by transfer ID and category

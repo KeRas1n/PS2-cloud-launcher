@@ -106,7 +106,7 @@ export type TransferState = 'queued' | 'running' | 'cancelling' | 'completed' | 
 export interface Transfer {
   id: string;
   title: string;
-  kind: SyncKind;
+  kind: SyncKind | 'BIOS';
   direction: Direction;
   provider: CloudProvider;
   gameId?: string;

@@ -7,6 +7,8 @@ const { SettingsStore } = require('../dist-electron/electron/services/settings')
 const { RcloneService } = require('../dist-electron/electron/services/rclone');
 const { AutoSyncService } = require('../dist-electron/electron/services/auto-sync');
 const { walk } = require('../dist-electron/electron/services/files');
+const { BiosSyncService } = require('../dist-electron/electron/services/bios-sync');
+const { TransferQueue } = require('../dist-electron/electron/services/transfer-queue');
 
 (async () => {
   const root = path.resolve('test-results', `cloud-${Date.now()}`);
@@ -100,8 +102,39 @@ const { walk } = require('../dist-electron/electron/services/files');
       await fs.readFile(path.join(cloud, 'PS2Cloud', 'Memcards', 'nested', 'card.ps2'), 'utf8'),
       'A second',
     );
+    // Synthetic ROM metadata only; exercise real Rclone upload/download, no personal BIOS.
+    const bios = Buffer.alloc(512 * 1024);
+    for (const [index, name, length] of [
+      [0, 'RESET', 0x100],
+      [1, 'ROMDIR', 64],
+      [2, 'ROMVER', 14],
+    ]) {
+      bios.write(name, 0x100 + index * 16, 'ascii');
+      bios.writeUInt32LE(length, 0x100 + index * 16 + 12);
+    }
+    bios.write('0200EC20040614', 0x140, 'ascii');
+    await fs.mkdir(a.store.value.biosDirectory, { recursive: true });
+    await fs.writeFile(path.join(a.store.value.biosDirectory, 'console.bin'), bios);
+    for (const [device, direction] of [
+      [a, 'upload'],
+      [b, 'download'],
+    ]) {
+      const queue = new TransferQueue(() => {});
+      try {
+        const service = new BiosSyncService(device.store, new MegaCloudStorage(device.rclone), queue);
+        await service.enqueue(direction);
+        const deadline = Date.now() + 60_000;
+        while (queue.active && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
+        assert.equal(queue.list()[0].state, 'completed', JSON.stringify(queue.list()));
+        assert.equal(queue.list()[0].bytes, bios.length);
+      } finally {
+        await queue.shutdown();
+      }
+    }
+    assert.deepEqual(await fs.readFile(path.join(mega, 'PS2Cloud', 'BIOS', 'console.bin')), bios);
+    assert.deepEqual(await fs.readFile(path.join(b.store.value.biosDirectory, 'console.bin')), bios);
     console.log(
-      'Cloud integration passed: bundled executable, persistent API transport, two devices, conflicts, backups, deletion recovery.',
+      'Cloud integration passed: bundled executable, persistent API transport, two devices, conflicts, backups, deletion recovery, queued BIOS upload/download.',
     );
   } finally {
     for (const device of devices) device.rclone.dispose();

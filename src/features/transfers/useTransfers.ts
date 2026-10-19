@@ -6,6 +6,7 @@ import { activeTransfer } from './transfer-state';
 export function useTransfers(
   setLibrary: Dispatch<SetStateAction<Library>>,
   setError: Dispatch<SetStateAction<string>>,
+  refresh: (scan?: boolean) => Promise<void>,
 ) {
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const terminalTransfers = useRef(new Set<string>());
@@ -18,6 +19,8 @@ export function useTransfers(
         (item) => !activeTransfer(item) && !terminalTransfers.current.has(item.id),
       );
       for (const item of finished) terminalTransfers.current.add(item.id);
+      if (finished.some((item) => item.kind === 'BIOS' && item.direction === 'download'))
+        void refresh(false).catch(() => {});
       if (finished.length)
         void bridge
           .library()

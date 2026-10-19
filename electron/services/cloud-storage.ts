@@ -30,7 +30,7 @@ export interface CloudStorage {
   status(): Promise<CloudStatus>;
   connect(credentials?: CloudCredentials): Promise<CloudStatus>;
   install(): Promise<void>;
-  remote(kind?: SyncKind): string;
+  remote(kind?: SyncKind | 'BIOS'): string;
   list(location: string): Promise<CloudFile[]>;
   ensureFolders(): Promise<void>;
   copyFile(

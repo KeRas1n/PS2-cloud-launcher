@@ -62,7 +62,10 @@ export function EmulatorPage() {
           <ShieldCheck />
         </div>
         <h3>BIOS</h3>
-        <p>Import an uncompressed BIOS from your PlayStation 2.</p>
+        <p>
+          Import an uncompressed BIOS from your PlayStation 2. MEGA backs it up and restores missing BIOS
+          files after sign-in. Transfers appear in Downloads.
+        </p>
         <Button
           secondary
           disabled={disabled || emulator?.running}

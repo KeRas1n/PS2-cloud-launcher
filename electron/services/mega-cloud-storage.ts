@@ -28,7 +28,7 @@ export class MegaCloudStorage implements CloudStorage {
   install() {
     return this.transport.install();
   }
-  remote(kind?: SyncKind) {
+  remote(kind?: SyncKind | 'BIOS') {
     return this.transport.remote(kind);
   }
   async list(location: string) {

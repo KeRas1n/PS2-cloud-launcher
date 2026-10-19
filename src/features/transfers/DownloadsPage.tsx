@@ -17,7 +17,7 @@ export function DownloadsPage() {
         <section className="panel empty-transfers">
           <ArrowDownToLine size={30} />
           <h3>No transfers yet</h3>
-          <p>Game downloads and uploads appear here.</p>
+          <p>Game, BIOS and save downloads and uploads appear here.</p>
         </section>
       )}
       <div className="transfer-list">

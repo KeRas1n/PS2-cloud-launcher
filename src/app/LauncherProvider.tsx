@@ -21,7 +21,7 @@ export function LauncherProvider({ children }: { children: ReactNode }) {
   const launcher = useLauncherState();
   const navigation = useNavigation();
   const settings = useSettingsDraft(launcher.snapshot?.settings);
-  const transfers = useTransfers(launcher.setLibrary, launcher.setError);
+  const transfers = useTransfers(launcher.setLibrary, launcher.setError, launcher.refresh);
   const preview = useSyncPreview(launcher.setError, launcher.setProgress, launcher.setNotice);
   const deletion = useGameDeletion(launcher.setLibrary, launcher.setError, launcher.setNotice);
   const libraryView = useLibraryView(launcher.library);

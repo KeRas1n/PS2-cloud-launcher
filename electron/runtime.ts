@@ -11,6 +11,7 @@ import { createCloudStorage } from './services/cloud-storage-factory';
 import { SettingsStore } from './services/settings';
 import { SyncService } from './services/sync';
 import { TransferQueue } from './services/transfer-queue';
+import { BiosSyncService } from './services/bios-sync';
 import { deleteLauncherData, prepareLauncherReset } from './services/reset';
 
 import type { WindowReference } from './window';
@@ -97,6 +98,9 @@ export async function createRuntime(launcherDir: string, windows: WindowReferenc
       transfers.wake();
     }
   };
+  const biosSync = new BiosSyncService(store, cloud, transfers, async () => {
+    if ((await pcsx2.status()).installed) await pcsx2.prepare();
+  });
   async function enqueueTransfer(planId: unknown, confirmed: unknown) {
     const prepared = sync.detach(z.string().uuid().parse(planId), z.boolean().parse(confirmed));
     const settings = structuredClone(store.value);
@@ -156,6 +160,7 @@ export async function createRuntime(launcherDir: string, windows: WindowReferenc
     games,
     sync,
     autoSync,
+    biosSync,
     transfers,
     exclusive,
     enqueueTransfer,

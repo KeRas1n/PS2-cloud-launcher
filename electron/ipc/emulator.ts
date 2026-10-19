@@ -52,6 +52,7 @@ export function registerEmulatorHandlers({ runtime, windows, handle, pick }: Ipc
       if (!file) return 0;
       const name = await pcsx2.profiles.importBios(file);
       if ((await pcsx2.status()).installed) await pcsx2.prepare(name);
+      if ((await cloud.status()).connected) await runtime.biosSync.enqueue('upload');
       return 1;
     }),
   );
