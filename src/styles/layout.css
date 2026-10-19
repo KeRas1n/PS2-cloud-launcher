@@ -14,7 +14,7 @@
   align-items: center;
   gap: 11px;
   padding: 0 10px;
-  margin-bottom: 36px;
+  margin-bottom: 8px;
   font-size: 24px;
   font-weight: 750;
   letter-spacing: -0.05em;
@@ -27,6 +27,13 @@
   display: grid;
   place-items: center;
   box-shadow: 0 5px 20px #365edf20;
+}
+.brand-version {
+  display: block;
+  padding: 0 10px;
+  margin-bottom: 26px;
+  color: #8d99b0;
+  font-size: 11px;
 }
 .brand span {
   display: block;

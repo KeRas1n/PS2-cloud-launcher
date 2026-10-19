@@ -59,8 +59,22 @@
   }
   .brand {
     padding: 0;
-    margin-bottom: 44px;
+    margin-bottom: 8px;
     justify-content: center;
+  }
+  .brand-version {
+    padding: 0;
+    margin-bottom: 34px;
+    text-align: center;
+  }
+  .sidebar-update {
+    padding: 8px 4px;
+    font-size: 9px;
+    gap: 6px;
+  }
+  .sidebar-update > button {
+    width: 100%;
+    padding: 5px 1px;
   }
   .brand > div:last-child,
   .nav-item > span,

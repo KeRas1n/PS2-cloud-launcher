@@ -2,6 +2,8 @@ import { ArrowDownToLine, ChevronRight, Layers3 } from 'lucide-react';
 import { navigation } from '../app/navigation';
 import { useLauncher } from '../app/useLauncher';
 import { transferRate } from '../lib/format';
+import { version } from '../../package.json';
+import { LauncherUpdateNotice } from './LauncherUpdateNotice';
 export function Sidebar() {
   const { page, setPage, library, activeTransfers } = useLauncher();
 
@@ -15,6 +17,7 @@ export function Sidebar() {
           PS2<span>CLOUD LAUNCHER</span>
         </div>
       </div>
+      <small className="brand-version">v{version}</small>
       <nav aria-label="Main navigation">
         {navigation.map(({ name, icon: Icon }) => (
           <button
@@ -30,23 +33,26 @@ export function Sidebar() {
           </button>
         ))}
       </nav>
-      <button
-        className={`nav-item downloads-nav ${page === 'Downloads' ? 'active' : ''}`}
-        aria-label="Download manager"
-        title="Download manager"
-        onClick={() => setPage('Downloads')}
-      >
-        <ArrowDownToLine size={20} />
-        <div className="download-manager-label">
-          <span>Downloads</span>
-          <small>
-            {activeTransfers.length
-              ? `${activeTransfers.length} active · ${transferRate(activeTransfers.reduce((sum, item) => sum + item.speed, 0))}`
-              : 'Downloads & uploads'}
-          </small>
-        </div>
-        {!!activeTransfers.length && <b>{activeTransfers.length}</b>}
-      </button>
+      <div className="sidebar-footer">
+        <LauncherUpdateNotice />
+        <button
+          className={`nav-item downloads-nav ${page === 'Downloads' ? 'active' : ''}`}
+          aria-label="Download manager"
+          title="Download manager"
+          onClick={() => setPage('Downloads')}
+        >
+          <ArrowDownToLine size={20} />
+          <div className="download-manager-label">
+            <span>Downloads</span>
+            <small>
+              {activeTransfers.length
+                ? `${activeTransfers.length} active · ${transferRate(activeTransfers.reduce((sum, item) => sum + item.speed, 0))}`
+                : 'Downloads & uploads'}
+            </small>
+          </div>
+          {!!activeTransfers.length && <b>{activeTransfers.length}</b>}
+        </button>
+      </div>
     </aside>
   );
 }

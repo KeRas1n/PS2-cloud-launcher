@@ -1,5 +1,8 @@
-.downloads-nav {
+.sidebar-footer {
   margin-top: auto;
+  flex-shrink: 0;
+}
+.downloads-nav {
   width: 100%;
   text-align: left;
   flex-shrink: 0;
